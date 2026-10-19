@@ -1,4 +1,4 @@
-is:issue state:open archived:false assignee:@me sort:updated-desc org:DiGi-Organization -org:"DigiProject-Organization"-label:"status: parked"
+is:issue state:open assignee:@me (org:DiGi-Organization OR org:DigiProject-Organization) -label:"status: parked" sort:updated-desc
 
 ##START
 
