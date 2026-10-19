@@ -118,6 +118,13 @@ $DeploymentUnits = @(
 		Path    = "..\DigiProject\bodyplan\UI\bin"
 		Recurse = $false
 		Ignore  = @()
+	},
+	@{
+		# DiGi.WebTracker tray host (WinExe). All three projects output to the repo-root bin\ folder.
+		Name    = "DiGi.WebTracker.UI.Application"
+		Path    = "DiGi.WebTracker\bin"
+		Recurse = $false
+		Ignore  = @()
 	}
 )
 
