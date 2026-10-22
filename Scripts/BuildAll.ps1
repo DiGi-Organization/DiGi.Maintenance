@@ -81,6 +81,7 @@ $solutionOrder = @(
 	"DiGi.Solar.Rhino\DiGi.Solar.Rhino.slnx",
 	"DiGi.CityGML\DiGi.CityGML.slnx",
 	"DiGi.BDOT10k\DiGi.BDOT10k.slnx",
+	"DiGi.PRG\DiGi.PRG.slnx",
 	"DiGi.Analytical\DiGi.Analytical.slnx",
 	"DiGi.Analytical.Rhino\DiGi.Analytical.Rhino.slnx",
 	"DiGi.GLTF.Analytical\DiGi.GLTF.Analytical.slnx",
