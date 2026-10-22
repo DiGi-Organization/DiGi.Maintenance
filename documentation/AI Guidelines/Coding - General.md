@@ -515,6 +515,14 @@ older than the `.exe` itself; the one that shipped this was four days stale.
 - **Only launching the host proves it.** Unit tests cannot: an `.xUnit` project re-declares its own
   references and therefore gets its own, correct manifest. Neither can the script below.
 
+**Second confirmed instance (DiGi.PRG).** `DiGi.PRG` and `DiGi.PRG.Geometry` were added as
+`<Reference><HintPath>` to the library `DiGi.GIS.PostgreSQL.UI`, consumed by the host
+`DiGi.GIS.PostgreSQL.UI.Application`. Identical symptom: `FileNotFoundException` for
+`DiGi.PRG.Geometry` at runtime, dll present in the deployment folder, absent from `deps.json`.
+Confirmed fix: `dotnet build --no-incremental` on the host regenerated its `deps.json` and the
+assembly resolved. The host `.csproj` was also updated to re-declare the two references explicitly;
+this is redundant but harmless and self-documenting — either approach alone is sufficient.
+
 ### Build-Time Symptoms Of The Same Opacity
 The sections above are about what a deployed host fails to load. The same `HintPath` opacity produces four
 compile-time failures in the workspace, each of which looks like a defect in the change you just made.
