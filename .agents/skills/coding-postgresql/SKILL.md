@@ -316,7 +316,7 @@ between them:
 
 | Conf | Tables (converters) |
 |---|---|
-| `GIS_PostgreSQL_Main.conf` | `administrative_areal_2d`, `building_2d`, `year_built_data`, occupancy, EPW, unit, statistical data |
+| `GIS_PostgreSQL_Main.conf` | `administrative_areal_2d`, `address_point`, `building_2d`, `year_built_data`, occupancy, EPW, unit, statistical data |
 | `GIS_PostgreSQL_Storage.conf` | `orto_datas`, `building_data`, `building_model`, `building`, `terrain_point` |
 
 - **There is no join across the two.** Work that needs both sides is a `Query` extension taking both
