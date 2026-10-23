@@ -81,8 +81,11 @@ What changes depends on the form:
 
 Keeping image processing behind `DiGi.Emgu.CV` / `DiGi.GIS.Emgu.CV` and inference behind `DiGi.YOLO.ONNX` keeps both replaceable without touching the rest of the system.
 
+### 4.3 Derived data
+
+Derived building-level values released by the project (paper 11: occupancy, first-appearance year, envelope areas, irradiation and the typology classes) are published under **CC BY 4.0** (decided by the maintainer, 2026-10-23). The release names its sources as the geodetic law and the GUS terms require (GUGiK: BDOT10k, PRG, orthophoto, terrain model, Budynki3D; GUS), states which values are estimates, and does not include weather files: values that depend on weather are computed from the IMGW-family files (CC0 source), not from IWEC.
+
 ## 5. Open items
 
-1. **Licence of the derived data release** (paper 11: occupancy, first-appearance year, envelope areas, irradiation) - recommended **CC BY 4.0**, consistent with the GUS terms and the attribution duty of the geodetic law. *Decision pending.*
-2. **IWEC sample file in public repositories** - `POL_Warsaw.123750_IWEC.epw` is committed in `DiGi.EPW/documentation/samples` and `DiGi.Test/files`; it is ASHRAE-copyrighted. Replace it with an IMGW-family file (CC0 source) and remove it. *Decision pending.*
-3. **Budynki3D legal basis** - before a commercial use, ask GUGiK which provision of art. 40a covers the models.
+1. **IWEC sample file in public repositories** - `POL_Warsaw.123750_IWEC.epw` is committed in `DiGi.EPW/documentation/samples` and `DiGi.Test/files`; it is ASHRAE-copyrighted. Replace it with an IMGW-family file (CC0 source) and remove it. *Decision pending.*
+2. **Budynki3D legal basis** - before a commercial use, ask GUGiK which provision of art. 40a covers the models.
