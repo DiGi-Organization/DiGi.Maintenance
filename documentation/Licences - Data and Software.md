@@ -87,5 +87,5 @@ Derived building-level values released by the project (paper 11: occupancy, firs
 
 ## 5. Open items
 
-1. **IWEC sample file in public repositories** - `POL_Warsaw.123750_IWEC.epw` is committed in `DiGi.EPW/documentation/samples` and `DiGi.Test/files`; it is ASHRAE-copyrighted. Replace it with an IMGW-family file (CC0 source) and remove it. *Decision pending.*
+1. ~~**IWEC sample file in public repositories**~~ - resolved 2026-10-23 (DiGi-Organization/DiGi.Test#4): `POL_Warsaw.123750_IWEC.epw` replaced in `DiGi.Test/files` and `DiGi.EPW/documentation/samples` by `POL_MZ_Warszawa-Chopina.Intl.AP.123750_IMGW.epw` (same station, CC0 source). The IWEC file remains in the git history of both repositories; removing it would need a history rewrite.
 2. **Budynki3D legal basis** - before a commercial use, ask GUGiK which provision of art. 40a covers the models.
