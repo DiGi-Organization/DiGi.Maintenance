@@ -12,9 +12,9 @@
     cold, the second warm - and inside a READ ONLY transaction that is rolled back, so nothing is written.
 
     Every statement runs once per VARIANT, so candidate fixes can be compared on one set of numbers
-    (DiGi.GIS.PostgreSQL#112): the baseline, a raised pg_trgm.similarity_threshold (SET LOCAL - scoped to that one
-    transaction, nothing persisted), a larger work_mem, both combined, and the baseline narrowed by county_id (the
-    county part with the most matches for the street, read with \gset). Under each variant the typo and the
+    (DiGi.GIS.PostgreSQL#112): the shipped threshold 0.4 first (SET LOCAL - scoped to that one transaction, nothing
+    persisted), the previous default 0.3, the rejected 0.5, and a larger work_mem. The county-narrowed case gets its
+    county_id with \gset (the county part with the most matches for the street). Under each variant the typo and the
     partial-name case also run their plain SELECT and print a RECALL line: whether the top 20 still holds a genuine
     match. A threshold that loses the typo is not acceptable.
 
@@ -89,12 +89,13 @@ $cases = @(
 )
 
 # (label, SET LOCAL statements run inside each READ ONLY transaction, before the statement they tune)
+# The first variant is what AddressPointPostgreSQLConverter now ships - SET LOCAL 0.4 inside its own short
+# transaction (DiGi.GIS.PostgreSQL#112). The others are the comparison matrix the decision was taken from.
 $variants = @(
-    @{ Label = 'threshold 0.3 (default), work_mem default'; Set = @() },
-    @{ Label = 'threshold 0.4';                             Set = @("SET LOCAL pg_trgm.similarity_threshold = '0.4';") },
-    @{ Label = 'threshold 0.5';                             Set = @("SET LOCAL pg_trgm.similarity_threshold = '0.5';") },
-    @{ Label = 'work_mem 64MB';                             Set = @("SET LOCAL work_mem = '64MB';") },
-    @{ Label = 'threshold 0.4 + work_mem 64MB';             Set = @("SET LOCAL pg_trgm.similarity_threshold = '0.4';", "SET LOCAL work_mem = '64MB';") }
+    @{ Label = 'threshold 0.4 (as shipped)';                  Set = @("SET LOCAL pg_trgm.similarity_threshold = '0.4';") },
+    @{ Label = 'threshold 0.3 (previous default)';            Set = @() },
+    @{ Label = 'threshold 0.5 (rejected, loses Warszawa typo rows)'; Set = @("SET LOCAL pg_trgm.similarity_threshold = '0.5';") },
+    @{ Label = 'work_mem 64MB (measured, no effect)';         Set = @("SET LOCAL work_mem = '64MB';") }
 )
 
 function New-AddressSearchStatement($case) {
