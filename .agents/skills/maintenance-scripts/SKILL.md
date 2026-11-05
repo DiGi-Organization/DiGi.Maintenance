@@ -1,6 +1,6 @@
 ---
 name: maintenance-scripts
-description: "Use when running or writing DiGi.Maintenance workspace scripts (BuildAll, Deploy, CheckHostDependencies, CopyUserFiles, CommitAllRepos and the other *AllRepos sweeps, InvestigateServer) - execution conventions ($PSScriptRoot path resolution, exit-code contract 0/1/2, host shell only), machine configuration in user files/*.conf (Directories.conf keys, opt-in booleans, never printing conf contents), cross-repository sweep conventions (narrow staging, core.autocrlf=false, the -NoCommit dry-run trap), the build & deploy flow with its HintPath and runtime-asset traps, and the house conventions for a new script."
+description: "Use when running or writing DiGi.Maintenance workspace scripts (BuildAll, Deploy, CheckHostDependencies, CopyUserFiles, CommitAllRepos and the other *AllRepos sweeps, InvestigateServer) - execution conventions ($PSScriptRoot path resolution, exit codes not uniform across existing scripts with the 0/1/2 contract for new ones, host shell only), machine configuration in user files/*.conf (Directories.conf keys, opt-in booleans, never printing conf contents), cross-repository sweep conventions (narrow staging, core.autocrlf=false for generated output only - never for a hand-edited LF source, the -NoCommit dry-run trap), the build & deploy flow (BuildAll.ps1 builds only its hard-coded solution list) with its HintPath and runtime-asset traps, and the house conventions for a new script."
 ---
 
 # AI Guidelines: Maintenance Scripts & Workspace Operations
@@ -24,17 +24,22 @@ README does not.
 3. **Run with the host shell, never an isolated sandbox** — these scripts touch sibling
    repositories, `git`, `gh`, the network and `localhost`, none of which a file-sandboxed shell
    reaches reliably.
-4. **Exit-code contract:** `0` success, `1` failure, `2` invalid invocation. A filter that matches
-   nothing must fail, not vacuously pass — e.g. `CheckHostDependencies.ps1 -Unit <unknown>` exits 2
-   and lists the known units rather than auditing nothing and returning 0. Trust exit codes only
-   from scripts you have not modified; `-FailOnMissing`-style switches exist precisely because the
-   default for audits is to report, not to fail.
+4. **Exit codes are not uniform across the existing scripts** — most exit `1` (or only
+   `Write-Error`) on any problem, and several do not set `$ErrorActionPreference = "Stop"`, so a
+   failing step can be followed by the next one. Read a script before relying on its exit code in
+   automation. Audits report rather than fail by default; pass the `-FailOnMissing`-style switch
+   when a gap must turn into a non-zero exit. New scripts follow the contract in §5.
 
 ## 2. Machine Configuration — `DiGi.Maintenance/user files/*.conf`
 
 Machine-specific settings live in key=value `.conf` files under `user files/` (git-ignored;
-templates in `files/`). Scripts parse them by hand and **warn-and-skip, not fail**, when a key is
-missing — so a silently missing setting looks like a script that "does nothing".
+templates in `files/`). Scripts parse them by hand, and a missing key behaves in one of two ways:
+
+- **A setting the script exists for fails the run** — `CopyUserFiles.ps1` exits `1` without
+  `Directories.conf` or `USER_FILES_BACKUP_DIRECTORY` (unless `-Destination` is passed).
+- **An optional feature is skipped with a DarkGray note** — `GLOBAL_AGENTS_FILE` in
+  `UpdateAgents.ps1`, the `INCLUDE_*` opt-ins in `Deploy.ps1`, the key in `InvestigateServer.ps1`.
+  A silently skipped feature looks like a script that "does nothing" — read the DarkGray lines.
 
 | File | Keys | Used by |
 |------|------|---------|
@@ -58,10 +63,14 @@ and `Push-Location`/`Pop-Location` into each repository. When writing or changin
    narrowly (`git add .agents`, `git add README.md`) so unrelated work in a checkout is untouched.
 2. **Use `git -c core.autocrlf=false add <path>`** for files the script generates with CRLF bytes —
    a machine with `core.autocrlf=true` otherwise turns the commit into a whole-file line-ending diff.
+   **Only for generated output** (`.agents`): a hand-edited script or guideline is stored LF and is
+   staged with a plain `git add`. Staging one with `autocrlf=false` from a CRLF working tree flips its
+   blob to CRLF — a whole-file diff that hides the real change and resets `git blame`
+   (`Scripts/UpdateAgents.ps1` in `ded084f`). Check with `git ls-files --eol <path>` (`i/lf`).
 3. Check `git status --porcelain <path>` before committing and skip clean repositories.
 4. **The dry-run trap:** a `-NoCommit` run followed by a committing run **commits nothing** — the
-   second run finds the files already up to date, reports `Updated repositories: 0`, and leaves the
-   dirty trees behind. Decide before the first run: dry-run only (`-NoCommit`, commit manually per
+   second run finds the files already up to date (`UpdateReadmes.ps1` reports
+   `Updated repositories: 0`) and leaves the dirty trees behind. Decide before the first run: dry-run only (`-NoCommit`, commit manually per
    repository afterwards) or one committing run. Neither sweep pushes.
 5. The workspace layout (one folder per owner, `DiGi\` = organization repos) is defined in
    `GitHub - Workspace Setup.md`; `SetupWorkspace.ps1` clones/repairs it (`-IncludeWikis`,
@@ -69,7 +78,9 @@ and `Push-Location`/`Pop-Location` into each repository. When writing or changin
 
 ## 4. Build & Deploy Flow
 
-- **`BuildAll.ps1`** builds every `DiGi.*` solution in Release. Do **not** force
+- **`BuildAll.ps1`** builds the solutions listed in its hard-coded `$solutionOrder`, in that
+  order, in Release — **not** every `DiGi.*` folder. A new solution is silently skipped until it is
+  added to `$solutionOrder` after everything it references by `HintPath`. Do **not** force
   `--no-incremental` across the sweep: it can delete `DiGi.Core\bin` before the solutions that
   `HintPath` it are compiled (`Coding - General.md`, Build-Time Symptoms). Build incrementally, or
   `DiGi.Core` first.
@@ -95,17 +106,22 @@ and `Push-Location`/`Pop-Location` into each repository. When writing or changin
 
 ## 5. Writing a New Maintenance Script
 
-House conventions, as exhibited by the existing scripts:
+Conventions for **new** scripts. Older scripts do not all follow them yet; do not copy an older
+script's error handling without checking it.
 
 1. Comment-based help (`<# .SYNOPSIS .DESCRIPTION .PARAMETER ... #>`) above a `param(...)` block
    with defaults; `$ErrorActionPreference = "Stop"` immediately after.
-2. `Write-Host -ForegroundColor`: Cyan = step start, Yellow = actionable warning, Red = failure,
+2. **Exit-code contract:** `0` success, `1` failure, `2` invalid invocation. A filter that matches
+   nothing must fail, not vacuously pass — `CheckHostDependencies.ps1` is the model: `-Unit <unknown>`
+   exits 2 and lists the known units rather than auditing nothing and returning 0.
+3. `Write-Host -ForegroundColor`: Cyan = step start, Yellow = actionable warning, Red = failure,
    Green = final success, DarkGray = skipped-by-configuration.
-3. A `user files/` conf is loaded with a small hand-rolled key=value loop (trim, skip `#`/blank,
-   split on the first `=`) — parameter overrides conf, missing conf warns and skips the feature.
-4. Idempotent re-runs are the norm (`InstallPythonEnvironment.ps1` no-ops on unchanged
+4. A `user files/` conf is loaded with a small hand-rolled key=value loop (trim, skip `#`/blank,
+   split on the first `=`) — a parameter overrides the conf; a missing required setting fails, a
+   missing optional one skips the feature (§2).
+5. Idempotent re-runs are the norm (`InstallPythonEnvironment.ps1` no-ops on unchanged
    requirements; `DeployLaya.ps1` skips unchanged models, removes only with `-Remove`).
-5. Add a section with the invocation examples to `Scripts/README.md` in the same change; that file
+6. Add a section with the invocation examples to `Scripts/README.md` in the same change; that file
    is what humans and agents read first.
-6. If the script codifies a rule or workflow agents must follow, write the matching guideline in
+7. If the script codifies a rule or workflow agents must follow, write the matching guideline in
    `documentation/AI Guidelines/` too (`Maintenance - AI Guidelines Propagation.md`).

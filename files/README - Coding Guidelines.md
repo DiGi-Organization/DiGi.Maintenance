@@ -575,6 +575,11 @@ also mirrored per repository as a skill under `.agents/skills/<skill-name>/SKILL
 | `GitHub - Branch Pull.md` / `- Branch Synchronization.md` | Pulling repos to their highest SemVer branch, or running the release/patch-bump workflow. |
 | `GitHub - Issues.md` | Creating, commenting on and closing issues — mandatory labels + default assignee, `--body-file`, verifying premises first, and **blocking relationships as GitHub issue dependencies** (`gh api … /dependencies/blocked_by`, cross-repository, set at blocker creation, verified with the `blocking` GET; a blocked issue is not started). |
 | `GitHub - Plan Files.md` | Keeping the repository free of plan files — plans live outside the working tree, no plan/scratch `*.md` is ever committed or pushed, and the default is deleting the temporary implementation plan when the issue closes (no archiving into the repo; explicit user instruction wins). |
+| `GitHub - Working Branch.md` | Deciding where to commit — the current active version branch, never a new branch, worktree or PR unless asked; `git pull --ff-only` before the first edit and before any rebuild. |
+| `GitHub - Labels.md` / `- AI Issue Classification.md` | Applying or syncing the Type / Priority / Status / AI Complexity label taxonomy, and choosing the mandatory `ai: *` tier for an issue. |
+| `GitHub - Workspace Setup.md` | Local folder layout (one folder per GitHub owner), new-machine setup with `Scripts/SetupWorkspace.ps1`, restoring `user files/`, and the `WIKI_SYNC_PAT` wiki sync secret. |
+| `Maintenance - Scripts.md` | Running or writing `DiGi.Maintenance/Scripts` — `user files/*.conf` configuration, cross-repository sweep conventions, the build & deploy flow and its traps. |
+| `Maintenance - AI Guidelines Propagation.md` | Adding, renaming or removing a guideline — the five hand-synced targets and regenerating `.agents/skills` with `UpdateAgents.ps1`. |
 | `GitHub - Sub-Issues.md` | Creating sub-issues / sub-tasks for a feature — the tracking-issue pattern: a parent tracking issue with a Sub-issues table + one self-contained sub-issue per repository, each referencing the parent. |
 
 > **One data rule worth knowing before it bites you:** a GIS county `code` does **not** identify one row.
