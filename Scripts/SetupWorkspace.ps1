@@ -15,7 +15,7 @@
     how an existing machine is migrated after repositories were transferred between owners.
 
     Requires git and an authenticated GitHub CLI ('gh auth login') with access to both organizations.
-    See 'documentation/GitHub - Workspace Setup.md'.
+    See 'documentation/AI Guidelines/GitHub - Workspace Setup.md'.
 
 .PARAMETER Root
     GitHub root folder (the folder that contains DiGi\ and DigiProject\). Defaults to the parent of the

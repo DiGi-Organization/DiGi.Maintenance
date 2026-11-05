@@ -16,7 +16,7 @@ GitHub root folder (typically `%USERPROFILE%\GitHub`):
 |---|---|---|
 | `DiGi\` | [DiGi-Organization](https://github.com/DiGi-Organization) | Every `DiGi.*` library, plus the workspace files (below) |
 | `DiGi\templates\` | DiGi-Organization | `DiGi.Template`, `DiGi.WebAPI.GLTF.Template` |
-| `DiGi\wiki\` | DiGi-Organization | `<repo>.wiki` clones (on demand, see `AI Guidelines/GitHub Wiki - General.md`) |
+| `DiGi\wiki\` | DiGi-Organization | `<repo>.wiki` clones (on demand, see `GitHub Wiki - General.md`) |
 | `DigiProject\` | [DigiProject-Organization](https://github.com/DigiProject-Organization) | Client projects: `bodyplan`, `Uponor`, `TimGreatrexArchitect`, `EtexGroup` |
 | `ZiolkowskiJakub\` | [ZiolkowskiJakub](https://github.com/ZiolkowskiJakub) | The personal repositories that are worked on locally |
 | `SAM-BIM\` | [SAM-BIM](https://github.com/SAM-BIM) | SAM repositories (managed separately) |
@@ -86,7 +86,7 @@ GitHub. Options:
 | `-Root <path>` | GitHub root folder; defaults to the parent of the `DiGi` folder the script runs from, or to the current directory when the script is not inside a `DiGi` workspace |
 
 Then check out the newest version branch in every repository - see
-`AI Guidelines/GitHub - Branch Pull.md` (`Scripts/PullBranchesAllRepos.ps1`).
+`GitHub - Branch Pull.md` (`Scripts/PullBranchesAllRepos.ps1`).
 
 ### 2.3 Restore the git-ignored `user files/`
 
@@ -117,7 +117,7 @@ Without a backup, recreate the files by hand. The ones in use:
 ### 2.4 Build
 
 Build in dependency order with `Scripts/BuildAll.ps1` (it starts from `DiGi.Core`); a library must be built
-before anything that references it through a `HintPath` (`AI Guidelines/Coding - General.md` §4).
+before anything that references it through a `HintPath` (`Coding - General.md` §4).
 
 ### 2.5 AI apps
 
@@ -198,7 +198,7 @@ Before the reorganisation every repository was owned by `ZiolkowskiJakub` and th
 
 Not covered by the reorganisation, still to check:
 
-- **Claude Code cloud environment:** paste the updated `documentation/Claude Cloud Enviroment Script.txt`
+- **Claude Code cloud environment:** paste the updated `documentation/Claude Cloud Enviroment Script.txt` (one level above this file)
   into the environment settings on claude.ai (the old clone URL keeps working through the redirect meanwhile).
 
 ## 5. Wiki sync secret (`WIKI_SYNC_PAT`)

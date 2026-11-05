@@ -42,6 +42,12 @@ Entry point: `DiGi/CLAUDE.md` (universal coding rules + routing table). The file
 | [XML Documentation - Create.md](XML%20Documentation%20-%20Create.md) | Adding missing `<summary>` documentation to public members. |
 | [XML Documentation - Audit.md](XML%20Documentation%20-%20Audit.md) | Auditing and synchronizing XML docs against code signatures. |
 
+### Maintenance
+| File | Trigger Task |
+|------|--------------|
+| [Maintenance - AI Guidelines Propagation.md](Maintenance%20-%20AI%20Guidelines%20Propagation.md) | Adding, renaming or removing a guideline, or regenerating `.agents/skills` — the single source of truth, the four hand-synced targets (`$descriptions` in `UpdateAgents.ps1`, `.agents/AGENTS.md`, this README, `files/README - Coding Guidelines.md`), skill-name derivation, description conventions, the `\r\r\n` pre-flight guard and the `-NoCommit` dry-run trap. |
+| [Maintenance - Scripts.md](Maintenance%20-%20Scripts.md) | Running or writing workspace scripts (`BuildAll`, `Deploy`, `CheckHostDependencies`, `CopyUserFiles`, `*AllRepos` sweeps, `InvestigateServer`) — `$PSScriptRoot` path resolution, the exit-code contract, machine configuration in `user files/*.conf`, cross-repo sweep conventions (narrow staging, `core.autocrlf=false`, the dry-run trap), and the build & deploy flow with its `HintPath` and runtime-asset traps. |
+
 ### GitHub & Wiki
 | File | Trigger Task |
 |------|--------------|
@@ -53,7 +59,7 @@ Entry point: `DiGi/CLAUDE.md` (universal coding rules + routing table). The file
 | [GitHub - Labels.md](GitHub%20-%20Labels.md) | Standardized GitHub label taxonomy (type, priority, status, ai), color standard, mandatory Type + Priority + AI Complexity on new issues, and multi-repo sync. |
 | [GitHub - Plan Files.md](GitHub%20-%20Plan%20Files.md) | Keeping the repository free of plan files — plans live in the local plans folder outside the working tree, a pre-commit sweep keeps plan/scratch `*.md` out of every commit and push, and the default is deleting the temporary implementation plan when the issue closes (no archiving into the repo; explicit user instruction wins). |
 | [GitHub - Sub-Issues.md](GitHub%20-%20Sub-Issues.md) | Creating sub-issues / sub-tasks for a feature — the tracking-issue pattern: a parent tracking issue with a mandatory Sub-issues table, one self-contained sub-issue per repository (own Context/Scope/Tests/Acceptance), cross-referencing, `blocked_by` dependencies between siblings, creation workflow, lifecycle, anti-patterns (canonical example: DiGi.GIS.PostgreSQL #83). |
-| [../GitHub - Workspace Setup.md](../GitHub%20-%20Workspace%20Setup.md) | Local folder layout (one folder per GitHub owner: `DiGi\` = DiGi-Organization, `DigiProject\` = DigiProject-Organization, `ZiolkowskiJakub\`), new-machine setup with `Scripts/SetupWorkspace.ps1`, restoring `user files/`, migrating a machine from the pre-2026-10-14 layout, and the organization-level `WIKI_SYNC_PAT` wiki sync secret (renewal, failure symptoms). |
+| [GitHub - Workspace Setup.md](GitHub%20-%20Workspace%20Setup.md) | Local folder layout (one folder per GitHub owner: `DiGi\` = DiGi-Organization, `DigiProject\` = DigiProject-Organization, `ZiolkowskiJakub\`), new-machine setup with `Scripts/SetupWorkspace.ps1`, restoring `user files/`, migrating a machine from the pre-2026-10-14 layout, and the organization-level `WIKI_SYNC_PAT` wiki sync secret (renewal, failure symptoms). |
 | [GitHub Wiki - General.md](GitHub%20Wiki%20-%20General.md) | Editing GitHub wiki pages — repo structure, local clones, CI sync. |
 | [GitHub Wiki - Home.md](GitHub%20Wiki%20-%20Home.md) | Structuring/updating wiki `Home.md` landing page. |
 | [GitHub Wiki - Benchmark.md](GitHub%20Wiki%20-%20Benchmark.md) | Authoring/updating wiki `Benchmark.md` performance pages. |
