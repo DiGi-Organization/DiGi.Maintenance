@@ -20,6 +20,6 @@ Double check for potential issues and bugs
 
 ##FINISH
 
-Commit and push the changes. Add final comments and implementation summary then close the issue.
+Commit and push the changes. Add final comments and implementation summary then close the issue if applicable.
 
-Commit and push the changes. Add final comments and implementation summary then close the issue. Review rest of the related GitHub issues.
+Commit and push the changes. Add final comments and implementation summary then close the issue if applicable. Review rest of the related GitHub issues.
