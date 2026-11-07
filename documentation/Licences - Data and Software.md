@@ -2,14 +2,15 @@
 
 Terms of reuse for every external data source and third-party component of the DiGi GIS system, the licence of
 the DiGi repositories, and the decisions that follow from them (DiGi-Organization/DiGi.Maintenance#17).
-Written for the publication series *Publikacje GIS* (papers 03, 10 and 11) and for any future commercial step.
+Written for the publication series *Publikacje GIS* (papers 01, 03, 10 and 11) and for any future commercial step.
+The open building datasets compared with BDOT10k in paper 01 are in §2.1 (DiGi-Organization/DiGi.Maintenance#18).
 
 > [!IMPORTANT]
 > This is an engineering record, not legal advice. Before any commercial release, have the decisions in §4 reviewed.
 
 | Field | Value |
 |---|---|
-| Checked | 2026-10-23 |
+| Checked | 2026-10-23; open building datasets (§2.1) 2026-11-07 |
 | Current use | open source (GPL-3.0), public repositories, non-commercial; commercial use of some parts is not planned but not excluded |
 | Open items | §5 |
 | EPW source | energyplus.net weather pages (confirmed by the maintainer, 2026-10-23) |
@@ -36,6 +37,21 @@ empty licence field for every repository - read the per-repository endpoint inst
 | EPW files in `epw_file` - IMGW family (`*_IMGW.epw`) | downloaded from the EnergyPlus weather pages (energyplus.net, Europe WMO region 6, Poland; the page has since been removed, the files are now hosted by Climate.OneBuilding.Org); derived from the ministry's 1971–2000 typical years | source data **CC0 1.0** (dane.gov.pl dataset 797); the EPW conversion carries no separate licence | [climate.onebuilding.org](https://climate.onebuilding.org/WMO_Region_6_Europe/POL_Poland/index.html) | 2026-10-23 | none (citation good practice) |
 | EPW files in `epw_file` - IWEC family (`*_IWEC.epw`) | same download; ASHRAE International Weather for Energy Calculations | **(c) 2001 ASHRAE, all rights reserved** "as noted in the License Agreement and Additional Conditions" (COMMENTS 1 line of every IWEC file) | [ashrae.org](https://www.ashrae.org/) | 2026-10-23 | use for calculations; **do not redistribute the files**; results computed from them may be published with the source named |
 | Building regulations (U-value limits) | Journal of Laws | public law, not protected by copyright | [isap.sejm.gov.pl](https://isap.sejm.gov.pl/) | 2026-10-22 | none |
+
+### 2.1 Open building datasets (paper 01)
+
+These are the six datasets imported for comparison with BDOT10k (DiGi-Organization/DiGi.GIS.PostgreSQL#121, #126). The versions are the ones downloaded on 2026-11-07. URL, size and SHA-256 of every file are in the import manifest, and the `building_dataset` register stores the same release fields: version, download date, source URL, licence, observation date, file name and SHA-256. The licence terms were read from each provider's own page on 2026-11-07.
+
+| Dataset | Version imported | Licence / terms | Source of the terms | Obligations |
+|---|---|---|---|---|
+| EUBUCCO | **v0.2**, Polish NUTS-2 files PL21, PL22, PL81, PL91, PL92 from `s3.eubucco.com/eubucco/v0.2/buildings/gpkg/`. The Zenodo record 10.5281/zenodo.7225259 holds **v0.1 only**. | **ODbL 1.0**. Two regional exceptions are listed by the provider: Prague (`geometry_source = gov-czechia-prague`) **CC BY-SA 2.0**, and Abruzzo (`gov-italy-abruzzo`) **CC BY-NC 2.0**. Neither occurs in the Polish files. | [docs.eubucco.com/latest/license](https://docs.eubucco.com/latest/license/) | Attribution; share-alike for a publicly used derived database. Cite Milojević-Dupont et al. 2023, *Scientific Data* 10:147 (the provider publishes no v0.2 citation). The Polish part is mixed: about 64–71 % `gov-poland` (Budynki3D GUGiK, so the GUGiK row in §2 also applies), 20–22 % `msft`, 9–14 % `osm` per NUTS-2 file. Exceptions travel per row as `Footprint.LicenceException`. |
+| Overture Maps, buildings theme | **2026-10-21.0**, DuckDB extract of the pilot counties | **ODbL** (licence of the buildings theme) | [docs.overturemaps.org/attribution](https://docs.overturemaps.org/attribution/) | "© OpenStreetMap contributors, Overture Maps Foundation"; share-alike. Contributing sources keep their own terms (Esri Community Maps and Google Open Buildings CC BY 4.0). Overture lists Microsoft's footprints as ODbL, Microsoft's own current release says CDLA-Permissive 2.0 (below). |
+| OpenStreetMap | Geofabrik **`poland-261106`** (replication timestamp 2026-11-06T21:21:21Z, sequence 4961) | **ODbL 1.0** (data) | [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) | Credit "© OpenStreetMap contributors" and state that the data is under ODbL; share-alike for derived databases |
+| EU Digital Building Stock Model (DBSM) | **R2025**, `dbsm-poland-R2025.gpkg` (DOI 10.2905/JRC.D1NJ5GG) | **The provider's files disagree**: `licenseODbL.txt` says ODbL, `copyright.txt` says CC BY 4.0. Treated as **ODbL**, the stricter of the two, which its ODbL inputs (EUBUCCO, OSM) also impose (§5). | [DBSM_Europe_R2025](https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/DBSM/DBSM_Europe_R2025/) (`copyright.txt`, `licenseODbL.txt`, `Changelog_DBSMR2025.txt`) | "© European Union, 1995-2026"; indicate changes; share-alike; cite JRC report JRC142133 (DOI 10.2760/0629989). The R2025 changelog removed the Prague and Abruzzo sources to simplify licensing. |
+| Microsoft Global ML Building Footprints | data release **2026-02-03** (catalog `dataset-links.csv` last modified 2026-02-25; 26 Polish quadkey files) | **CDLA-Permissive 2.0** | [github.com/microsoft/GlobalMLBuildingFootprints](https://github.com/microsoft/GlobalMLBuildingFootprints) | No attribution clause required; name the source as good practice. No share-alike. Older releases were distributed under ODbL, which is how Overture still lists them, so record the release. |
+| GHS-OBAT | **R2024A**, epoch 2020, `GHS_OBAT_GPKG_POL_E2020_R2024A_V1_0.gpkg` | **CC BY 4.0** is the only licence in the provider's `copyright.txt`. Its building identifiers and geometry derive from Overture 2024-07-22.0, which is ODbL (§5). | [GHS_OBAT_GLOBE_R2024A/copyright.txt](https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_OBAT_GLOBE_R2024A/copyright.txt) | "© European Union"; credit and indicate changes. Its `overture_id` values are Overture 2024-07-22.0 identifiers and do not join to the 2026-10-21.0 release. |
+
+The datasets are not independent: Overture and DBSM incorporate OSM and Microsoft, EUBUCCO v0.2 incorporates OSM and Microsoft for Poland, and GHS-OBAT is derived from Overture. Their licences therefore stack (§4.4).
 
 ## 3. Third-party software
 
@@ -85,7 +101,17 @@ Keeping image processing behind `DiGi.Emgu.CV` / `DiGi.GIS.Emgu.CV` and inferenc
 
 Derived building-level values released by the project (paper 11: occupancy, first-appearance year, envelope areas, irradiation and the typology classes) are published under **CC BY 4.0** (decided by the maintainer, 2026-10-23). The release names its sources as the geodetic law and the GUS terms require (GUGiK: BDOT10k, PRG, orthophoto, terrain model, Budynki3D; GUS), states which values are estimates, and does not include weather files: values that depend on weather are computed from the IMGW-family files (CC0 source), not from IWEC.
 
+### 4.4 Open building datasets: CC BY 4.0 does not cover ODbL joins
+
+The CC BY 4.0 release of §4.3 **cannot cover object-level data joined with an ODbL dataset**: EUBUCCO, Overture, OSM, DBSM and anything derived from them. ODbL §4.4 requires a publicly used derivative database to stay under ODbL (share-alike), and CC BY 4.0 imposes no such condition. Therefore:
+
+- `building_dataset_match` link rows, matched footprints and any per-building value computed from an ODbL geometry stay **ODbL** and are not released under CC BY 4.0. If published, they go out as a separate ODbL database with the attribution of §2.1.
+- **Paper 01 publishes aggregates only**: completeness, built-up area, distances and roof area per unit and per grid cell. Under ODbL §4.3 these are *Produced Works*, which need the attribution notice but not share-alike.
+- Microsoft (CDLA-Permissive 2.0) and GHS-OBAT (CC BY 4.0 as stated by the provider) do not impose share-alike on their own. GHS-OBAT still links to ODbL Overture identifiers, so joins through `overture_id` follow the Overture terms.
+
 ## 5. Open items
 
 1. ~~**IWEC sample file in public repositories**~~ - resolved 2026-10-23 (DiGi-Organization/DiGi.Test#4): `POL_Warsaw.123750_IWEC.epw` replaced in `DiGi.Test/files` and `DiGi.EPW/documentation/samples` by `POL_MZ_Warszawa-Chopina.Intl.AP.123750_IMGW.epw` (same station, CC0 source). The IWEC file remains in the git history of both repositories; removing it would need a history rewrite.
 2. **Budynki3D legal basis** - before a commercial use, ask GUGiK which provision of art. 40a covers the models.
+3. **DBSM R2025 licence conflict** - `copyright.txt` (CC BY 4.0) and `licenseODbL.txt` (ODbL) disagree. The register treats the release as ODbL. Ask the JRC (DBSM contact) which one governs before releasing any object-level DBSM derivative.
+4. **GHS-OBAT licence** - the provider states CC BY 4.0 only, although the geometry and identifiers come from ODbL Overture 2024-07-22.0. Confirm with the JRC (GHSL) whether the per-building files carry ODbL obligations. Until then, keep object-level GHS-OBAT joins under ODbL (§4.4).
