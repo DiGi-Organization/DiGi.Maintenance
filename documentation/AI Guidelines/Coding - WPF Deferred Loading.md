@@ -35,8 +35,9 @@ at national coverage, so it had to be deferred.
   - The window starts the read itself. Nothing awaits it before `ShowDialog()`.
   - `null` means no read is done: nothing is marked, and the progress bar never appears.
   - Pass a lambda that captures what the read needs (manager, ids). The window knows nothing about HTTP.
-- The window owns a `CancellationTokenSource` and cancels it on `Closed`. A read nobody is waiting for
-  stops, and so does the server query behind it, because the token reaches the request.
+- The window owns a `CancellationTokenSource`, and its `Closed` handler cancels it and then disposes it
+  (§2.5). A read nobody is waiting for stops, and so does the server query behind it, because the token
+  reaches the request.
 - The constructor fills everything that is already known first. Then it sets the status text, shows
   the progress bar, and starts the read without awaiting it: `_ = ReadXAsync(xAsync);`.
 - A **public `SetX(T? x)`** applies the result:
@@ -118,6 +119,50 @@ it is still moving.
 - Decide item text in the naming callback from the stored result, so the same code path serves both
   "not loaded yet" and "loaded".
 
+### 2.5 Closing before the data arrives
+
+```csharp
+// In the constructor, before the read is started.
+Closed += (sender, e) =>
+{
+    cancellationTokenSource.Cancel();
+    cancellationTokenSource.Dispose();
+};
+```
+
+What happens, end to end, when the window closes while the read is still running:
+
+1. **Every way out cancels, OK included.** `Closed` is raised for OK, Cancel and the close box alike.
+   That is intended: once the dialog is answered, nobody needs the decoration. Do not cancel only from
+   the Cancel button.
+2. **The client stops.** The window's token reaches the `Query` member, which links it to its timeout.
+   Every `HttpClient.GetAsync` still running is abandoned, and requests still waiting for a throttling
+   slot (§3) never start.
+3. **The server stops, but only if the endpoint passes its token on.** ASP.NET cancels the action's
+   `CancellationToken` when the client goes away. Npgsql cancels the query only if the controller passes
+   that token down to the converter call. An endpoint that drops it keeps running the query until its
+   `commandtimeout`. Check the controller when you add a read.
+4. **The `Query` member rethrows the cancellation.** It came from the caller's token, so the
+   `catch (…) when (cancellationToken.IsCancellationRequested) { throw; }` filter lets it through rather
+   than turning it into `null`.
+5. **The window swallows it.** The read method returns before `SetX`, and its `finally` collapses the bar
+   on the closed window, which is harmless. The status label and the items stay as they were. Nothing is
+   logged, because a cancellation is not a failure.
+6. **A result that arrives just as the window closes is dropped** by the `IsCancellationRequested` check
+   after the `await` (§2.2). A closed window is never redrawn.
+7. **The continuation still runs, later.** The tray application's dispatcher keeps running after
+   `ShowDialog()` returns. The read method catches everything, so nothing is left unobserved.
+
+Details that keep this correct:
+- **Dispose after `Cancel`, in the same handler.** Before this, the source was cancelled and left for the
+  finalizer, one per opened dialog. Disposing is safe because the read took `cancellationTokenSource.Token`
+  synchronously in the constructor, and `IsCancellationRequested` still answers after `Dispose()`. Never
+  read `.Token` after the window has closed: it throws `ObjectDisposedException`.
+- **A cancellation can arrive as a different exception.** For example, an `HttpRequestException` from a
+  connection torn down mid-response. The `Query` member's general `catch` then logs one spurious Warning and
+  returns `null`. The window's `IsCancellationRequested` check still leaves it alone, so the only cost is
+  that log line.
+
 ## 3. The read itself (`/Query/<Name>Async.cs`)
 
 - A `Query` member, `public static async Task<T?> XAsync(…, CancellationToken cancellationToken = default)`,
@@ -132,6 +177,13 @@ it is still moving.
   - Put the timeout in a `Constants` class, with a `<summary>` saying how it was measured.
 - **Batch the requests.** A fixed number of requests for the whole list, sent together with
   `Task.WhenAll`, never one per item.
+  - When an endpoint caps the batch size and the list needs many requests, throttle them with a
+    `SemaphoreSlim` (`WaitAsync(token)`, `Release()` in `finally`). Keep the semaphore in a `using` that
+    encloses the `await Task.WhenAll(…)`. `WhenAll` waits for every request to finish or cancel before it
+    throws, so no `Release()` ever reaches a disposed semaphore. Reference:
+    `Query/TerrainPointDensityResultsAsync.cs` (3 at a time).
+  - Return `null` if **any** batch fails. A partial result leaves some items undecorated, which reads as
+    "measured, nothing found".
 - Prefer cheap sources for decoration: a planner estimate (`estimatedcounts…`) rather than `COUNT(*)`.
 - No caching of the result (`Coding - General.md` §1.20). Each opening of the window reads afresh.
 
@@ -148,7 +200,7 @@ missing for one item, which gets no decoration rather than a default.
 ## 5. Testing (xUnit facts, `Coding - Automatic Tests.md`)
 
 Run each fact on an STA thread (`thread.SetApartmentState(ApartmentState.STA)`) and reach controls via
-`window.FindName("…")`. Cover four reads:
+`window.FindName("…")`. Cover five cases:
 
 | Case | Construct with | Assert |
 |------|----------------|--------|
@@ -156,10 +208,26 @@ Run each fact on an STA thread (`thread.SetApartmentState(ApartmentState.STA)`) 
 | Pending | `_ => new TaskCompletionSource<T?>().Task` | bar `Visible`; then `SetX(value)` → `Collapsed` |
 | Completes at once | `_ => Task.FromResult<T?>(value)` | bar `Collapsed`; items decorated |
 | Throws at once | `_ => Task.FromException<T?>(new InvalidOperationException())` | bar `Collapsed`; failure status; nothing decorated |
+| Closed before data | a read that ends only when its token is cancelled; `window.Close()`; pump the dispatcher | token cancelled; bar `Collapsed`; status and items unchanged |
+
+The **closed-before-data** fact (reference: `DiGi.Test/DiGi.GIS.PostgreSQL.UI.xUnit/Facts/OptionsWindows_CloseBeforeData.cs`,
+one helper and one fact per window):
+1. On the STA thread, first install the dispatcher context the application has:
+   `SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher))`.
+   Without it the window's `await` resumes on the thread pool, and the fact exercises a path the
+   application never takes.
+2. Construct with `token => { token.Register(() => taskCompletionSource.TrySetCanceled(token)); return taskCompletionSource.Task; }`,
+   keeping the token.
+3. `window.Close()`. This raises `Closed` on a window that was never shown. Assert that the token is cancelled.
+4. Pump the posted continuation:
+   `DispatcherFrame frame = new(); Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => frame.Continue = false)); Dispatcher.PushFrame(frame);`.
+5. Assert that the bar is `Collapsed`, which only the `finally` can do here, and that the items and the
+   status are unchanged, which proves `SetX` never ran.
 
 Things a fact cannot do on that thread:
-- **Never complete a pending task from the fact.** Its continuation is posted to a dispatcher the test
-  thread does not pump, so it never runs. Apply the result with the public `SetX` instead.
+- **Never complete a pending task from the fact without pumping.** Its continuation is posted to a
+  dispatcher the test thread does not pump, so it never runs. Either apply the result with the public
+  `SetX`, or pump as in step 4 above.
 - **Never show the window** (no `ShowDialog`). Keep modal message boxes and confirmations out of the
   window, in the caller (the background task), or a fact that clicks OK hangs.
 - Layout cannot be measured on a window that was never shown, so check placement on screen once.
@@ -173,5 +241,9 @@ Things a fact cannot do on that thread:
 | The progress bar keeps spinning after the data shows or after closing | The bar is hidden only on the success path. Hide it in `finally`. |
 | The selection is lost when the data arrives | The list was re-set instead of refreshed. |
 | Every item reads as "not done" after a network error | A failed read was turned into an empty result instead of `null`. |
-| The server keeps running a query after the window closed | The token was not passed to the request, or the server timeout is longer than the client wait. |
+| The server keeps running a query after the window closed | The token was not passed to the request, the controller does not pass its `CancellationToken` to the converter, or the server timeout is longer than the client wait. |
+| The read keeps running after OK | Cancellation hangs off the Cancel button instead of `Closed`. |
+| `ObjectDisposedException` after the window closed | `.Token` read from the disposed source. Take the token once, when the read starts. |
+| A Warning "could not be read" logged when a dialog was closed | A cancellation that surfaced as `HttpRequestException`. Harmless (§2.5), and not a failed read. |
+| A closed-before-data fact passes without testing anything, or hangs | No `DispatcherSynchronizationContext` installed (the continuation runs on the thread pool), or the dispatcher is never pumped. |
 | A fact hangs | A modal box inside the window, or a fact awaiting a continuation on an unpumped dispatcher. |
