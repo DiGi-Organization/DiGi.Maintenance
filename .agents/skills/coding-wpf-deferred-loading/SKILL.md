@@ -1,6 +1,6 @@
 ---
 name: coding-wpf-deferred-loading
-description: "Use when a WPF window or dialog needs data that takes noticeably long to read (over about half a second, or unbounded) - the default mechanism: open at once, start the read from the constructor as a Func<CancellationToken, Task<T?>> without awaiting it, show a status label plus an indeterminate progress bar in the bottom-left corner of the button row, apply the result through a public Set method that refreshes items in place (selection and scroll kept), cancel and dispose the token source on Closed (raised by OK too), hide the bar in finally, and what a close before the data arrives does end to end (the controller must pass its CancellationToken to the converter or the server query runs on; throttled batches keep the SemaphoreSlim alive across Task.WhenAll). Also the traps: no ConfigureAwait(false) in the window (cross-thread exception), never read inside Dispatcher.Invoke or before ShowDialog, null means unknown and never an empty answer, the Query read returns null on every failure and bounds itself with a linked CancelAfter equal to the server commandtimeout, and the STA facts for no-read/pending/completed/failed reads plus the closed-before-data fact (install a DispatcherSynchronizationContext, Close, pump a DispatcherFrame)."
+description: "Use when a WPF window or dialog needs data that takes noticeably long to read (over about half a second, or unbounded) - the default mechanism: open at once, start the read from the constructor as a Func<CancellationToken, Task<T?>> without awaiting it, show a status label plus an indeterminate progress bar in the bottom-left corner of the button row, apply the result through a public Set method that refreshes items in place (selection and scroll kept), cancel and dispose the token source on Closed (raised by OK too), hide the bar in finally, and what a close before the data arrives does end to end (passing the CancellationToken to the converter is necessary but, as deployed, not sufficient - the server keeps running an aborted query until commandtimeout, DiGi.GIS.WebAPI#77; throttled batches keep the SemaphoreSlim alive across Task.WhenAll). Also the traps: no ConfigureAwait(false) in the window (cross-thread exception), never read inside Dispatcher.Invoke or before ShowDialog, null means unknown and never an empty answer, the Query read returns null on every failure and bounds itself with a linked CancelAfter equal to the server commandtimeout, and the STA facts for no-read/pending/completed/failed reads plus the closed-before-data fact (install a DispatcherSynchronizationContext, Close, pump a DispatcherFrame)."
 ---
 
 # AI Guidelines: WPF Deferred Loading (slow data in a window or dialog)
@@ -41,8 +41,8 @@ at national coverage, so it had to be deferred.
   - `null` means no read is done: nothing is marked, and the progress bar never appears.
   - Pass a lambda that captures what the read needs (manager, ids). The window knows nothing about HTTP.
 - The window owns a `CancellationTokenSource`, and its `Closed` handler cancels it and then disposes it
-  (§2.5). A read nobody is waiting for stops, and so does the server query behind it, because the token
-  reaches the request.
+  (§2.5). A read nobody is waiting for stops on the client, because the token reaches the request. The
+  server query behind it does not stop yet (DiGi.GIS.WebAPI#77).
 - The constructor fills everything that is already known first. Then it sets the status text, shows
   the progress bar, and starts the read without awaiting it: `_ = ReadXAsync(xAsync);`.
 - A **public `SetX(T? x)`** applies the result:
@@ -143,10 +143,18 @@ What happens, end to end, when the window closes while the read is still running
 2. **The client stops.** The window's token reaches the `Query` member, which links it to its timeout.
    Every `HttpClient.GetAsync` still running is abandoned, and requests still waiting for a throttling
    slot (§3) never start.
-3. **The server stops, but only if the endpoint passes its token on.** ASP.NET cancels the action's
-   `CancellationToken` when the client goes away. Npgsql cancels the query only if the controller passes
-   that token down to the converter call. An endpoint that drops it keeps running the query until its
-   `commandtimeout`. Check the controller when you add a read.
+3. **Do not assume the server stops: as deployed, it does not (DiGi.GIS.WebAPI#77).**
+   - Passing the token down is **necessary**. An endpoint that drops it keeps running its queries until
+     `commandtimeout`. Check the controller when you add a read.
+   - It is **not sufficient**. On 2026-11-07, `terrain/densitiesbycountyids` was measured on
+     `api.digiproject.uk`. That endpoint passes its token all the way to `ExecuteReaderAsync`. A request
+     whose client closed its socket at 4 s still went on loading the server for the rest of its run:
+     a re-run took 18.9 s, against 14.1 s for a request alone and 20.5 s for two at once.
+   - Until #77 is fixed, the time limit is what actually ends an abandoned query on the server. The
+     server `commandtimeout` the `Query` member sends (§3) is that limit, so keep it no longer than the
+     client wait.
+   - Measure, do not read the code, before claiming that a close frees the server. The probe is in #77:
+     the timing of a request alone, two at once, and a re-run straight after an explicit socket close.
 4. **The `Query` member rethrows the cancellation.** It came from the caller's token, so the
    `catch (…) when (cancellationToken.IsCancellationRequested) { throw; }` filter lets it through rather
    than turning it into `null`.
@@ -246,7 +254,7 @@ Things a fact cannot do on that thread:
 | The progress bar keeps spinning after the data shows or after closing | The bar is hidden only on the success path. Hide it in `finally`. |
 | The selection is lost when the data arrives | The list was re-set instead of refreshed. |
 | Every item reads as "not done" after a network error | A failed read was turned into an empty result instead of `null`. |
-| The server keeps running a query after the window closed | The token was not passed to the request, the controller does not pass its `CancellationToken` to the converter, or the server timeout is longer than the client wait. |
+| The server keeps running a query after the window closed | The token was not passed to the request, or the controller does not pass its `CancellationToken` to the converter. **As deployed, it also happens when both are right** (DiGi.GIS.WebAPI#77). Until that is fixed, only the server `commandtimeout` ends the query, so keep it no longer than the client wait. |
 | The read keeps running after OK | Cancellation hangs off the Cancel button instead of `Closed`. |
 | `ObjectDisposedException` after the window closed | `.Token` read from the disposed source. Take the token once, when the read starts. |
 | A Warning "could not be read" logged when a dialog was closed | A cancellation that surfaced as `HttpRequestException`. Harmless (§2.5), and not a failed read. |
