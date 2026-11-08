@@ -23,8 +23,7 @@ Copy `files/Directories.conf` to `user files/Directories.conf` and configure the
 Builds all DiGi solution repositories in Release configuration. Pass `-CheckDependencies` to run
 `CheckHostDependencies.ps1` against the produced output once every solution has built, failing when
 a host is missing an assembly its libraries reference. Rebuilding a single solution with
-`--no-incremental` can delete `DiGi.Core\bin` before compiling against it (`Coding - General.md` §4,
-*Build-Time Symptoms*): build incrementally, or `DiGi.Core` first.
+`--no-incremental` can delete `DiGi.Core\bin` before compiling against it (`Coding - Host Dependencies.md` §6): build incrementally, or `DiGi.Core` first.
 ```powershell
 PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\BuildAll.ps1" -Configuration Release
 
