@@ -1,6 +1,6 @@
 ---
 name: coding-project-setup
-description: "Use when creating a project or repository from templates/ or changing build configuration - the GitHub-created .gitignore that leaks user files, the new-repository checklist (labels, BuildAll order, version branch), Directory.Build.props and the real LangVersion of the repos, .editorconfig from the template (overrides only under [*.cs], never above the first section), Solution Items, Roslyn analyzer project split (DIGI0001)."
+description: "Use when creating a project or repository from templates/ or changing build configuration - the GitHub-created .gitignore that leaks user files, the new-repository checklist (labels, BuildAll order, version branch), Directory.Build.props (LangVersion latest, latest-recommended analyzers) and the behavior-preserving analyzer fixes and site suppressions, .editorconfig from the template (overrides only under [*.cs], never above the first section), Solution Items, Roslyn analyzer project split (DIGI0001)."
 ---
 
 # AI Guidelines: Project Setup — Templates, New Repositories, `.editorconfig`, Build Props, Analyzers
@@ -38,13 +38,43 @@ Then, in order (`DiGi.GIS.YOLO.UI`, `DiGi.YOLO.ONNX` are recent examples):
 8. `gh repo edit <owner>/<name> --description "..."` (empty by default).
 
 ## 3. `Directory.Build.props`, language version, version stamp
-- The **template** sets `LangVersion` 12.0, `Nullable` enable, `TreatWarningsAsErrors`, `AnalysisLevel latest-recommended`
-  and XML documentation for non-test projects. **Existing repositories mostly do not** (11 of 72 props carry it): they set
-  `<LangVersion>latest</LangVersion>` per `.csproj`. Core libraries (`DiGi.Core`, `DiGi.Geometry`, …) target
-  `netstandard2.0`; hosts target `net10.0(-windows)`. Write code that compiles at C# 12 on `netstandard2.0` unless the
-  project says otherwise.
-- `System.Threading.Lock` (`private readonly Lock lockObject = new();`) only in net9+ projects compiled at C# 13+; elsewhere
-  lock an `object`. The template's `csharp_prefer_system_threading_lock` suggestion is inert at LangVersion 12.
+- **Every repository's props carry the template's settings** (DiGi.Maintenance#19): `LangVersion latest`, `Nullable`,
+  `ImplicitUsings`, `TreatWarningsAsErrors`, `AnalysisLevel latest-recommended`, `EnforceCodeStyleInBuild`, XML
+  documentation for non-test projects. A `.csproj` sets none of them (no per-project `<LangVersion>`). Core libraries
+  (`DiGi.Core`, `DiGi.Geometry`, …) target `netstandard2.0`; hosts `net10.0(-windows)` — the language is latest, the
+  runtime API is the target's.
+- **Zero warnings means the analyzers too.** Recurring findings and the behavior-preserving fix:
+  - `CA1305`/`CA1304`/`CA1311`: pass the culture the call already used (`CultureInfo.CurrentCulture`; Roslyn's
+    `Diagnostic.GetMessage` defaults to `CurrentUICulture`). `InvariantCulture` only where the value is an identity, a
+    key or wire text (`Coding - General.md` §1) — never as a silent switch.
+  - `CA1310`: `StringComparison.CurrentCulture`, or `Ordinal` when the comparison is an identity (`CA1309`); a
+    user-facing sort keeps its culture order with a `#pragma` and reason.
+  - `CA2200` (`throw exception;`): drop the catch or `throw;`. `CA1036`: add `<`/`<=`/`>`/`>=` that follow `CompareTo`,
+    null first.
+  - `CS0104` after `ImplicitUsings` (`Timer`, …): `using Timer = <the namespace the file meant>.Timer;`. A WPF project
+    with `UseWindowsForms` gets `System.Windows.Forms` implicitly (`MessageBox`, `OpenFileDialog`, `Application`,
+    `Label` turn ambiguous): `<Using Remove="System.Windows.Forms" />` in its `.csproj`.
+  - `CA1805` on a `readonly` field assigned nowhere else: removing `= null` raises `CS0649` — keep the initializer and
+    suppress.
+  - `CA1200`: `<see cref="Classes.X"/>`, not `T:`; ``X`1`` becomes `X{T}`. The compiler never checked a prefixed cref,
+    so dropping `T:` can surface a wrong target as `CS1574` — point it at the real namespace (inside `Create`, a bare
+    `X` binds to the `X` factory method).
+  - `CA1822`: the code fix (`dotnet format analyzers`) also makes a **public** instance member `static` — every
+    `instance.Method(...)` caller breaks, and reflection with `BindingFlags.Instance` misses it silently. Accept it
+    only for non-public members; suppress on a public one.
+  - `CA2016`: forward the token (`cancellationToken: cancellationToken` after a skipped default) — a deliberate
+    behavior change (a requested cancel now stops that step too), so the commit says so. A write that must finish once
+    started (a controller's `UpdateAsync` when the client disconnects) passes `CancellationToken.None` explicitly
+    instead. `CA1068`: token last.
+  - `CA1848`/`CA1873` (`LoggerMessage` delegates): a host logging through `ILogger` with inline structured templates
+    turns them off in its own `.editorconfig` (`DiGi.GIS.WebAPI.UI`); `CA2254` is fixed — the template stays constant.
+  - A design rule on a public or serialized name (`CA1710`, `CA1010`, `CA1000`, `CA1859` on a serialized field,
+    `CA5350`/`CA5351` on a non-security hash, `CA2201`, `CA1069`): `[SuppressMessage(..., Justification = "...")]` or a
+    `#pragma` with its reason at the site — renaming a public or wire type is a breaking change, not a fix.
+- A non-SDK (.NET Framework, `TargetFrameworkVersion`) project still gets `Nullable` from the props, but the SDK
+  analyzers do not run on it (`DiGi.Translate.Framework`).
+- `System.Threading.Lock` (`private readonly Lock lockObject = new();`) only in net9+ projects; a `netstandard2.0`
+  library locks an `object`.
 - Version: `<Major>`/`<Minor>`/`<Build>` match the version branch; `Revision` is a UTC `yyyyMMddHHmmss` stamp; the SDK
   appends `+<HEAD hash>` to `InformationalVersion` — with no dirty marker, so a build from uncommitted changes carries
   HEAD's hash.
@@ -77,9 +107,14 @@ How the house rules (`Coding - General.md` §1) map to settings:
 
 Diagnostic overrides under `[*.cs]` (`= none`), each with its reason: `IDE0130` (logical namespaces; folders do not add
 segments, `Coding - General.md` §2), `CA1707` (underscores in `To[Area]_[Type]` and `_`-suffixed names), `CS1591`,
-`IDE0290` (no primary constructors), `IDE1006`, `CA1016`, `CA1711`. Most repositories carry only the first three — when
-one fails on `CA1707`/`CA1711`, copy the template's block. The template has the block **once**, under `[*.cs]`;
-`[*.{cs,vb}]` holds the naming rules.
+`IDE0290` (no primary constructors), `IDE1006`, `CA1016`, `CA1711`; and the analyzer rules that contradict the
+conventions: `CA1720` (variables named after their type, `object @object`), `CA1725` (overrides keep that naming),
+`CA1715` (established generic names `UValue`, `K`), `CA1051`/`CA1708` (base classes expose protected fields beside
+same-named properties), `CA1716` (`Query`, `Modify`, `Create`, `Convert`, `Inspect`). Add a rule here only when it
+contradicts a convention everywhere; otherwise fix the code or suppress at the site (§3). The template has the block
+**once**, under `[*.cs]`; `[*.{cs,vb}]` holds the naming rules. A repository-only override goes in a section of its own
+appended below the template's text, with its reason (`DiGi.GIS.ML`: generated ML.NET files; `DiGi.GIS.WebAPI.UI`:
+`ILogger` rules), so a re-copy of the template shows it in the diff.
 
 ## 5. Roslyn analyzers & code fixes
 `DIGI0001` lives in `DiGi.Maintenance/DiGi.Maintenance.Analyzers/ParameterListLineBreakAnalyzer.cs` (fact project

@@ -35,8 +35,8 @@ is no Dynamo repository.)
 
 ## 2. Goo and parameters
 - One file per wrapped type holds the pair `GooX : GooSerializableObject<T>` (or `GooBakeAwareSerializableObject<T>` with
-  `Geometries` for baking) **and** `GooXParam : GooPresistentParam<…>` (or `GooBakeAwareSerializableParam<GooX, T>`) —
-  the sanctioned exception to one type per file. `Presistent` is spelled so in code; do not "fix" it.
+  `Geometries` for baking) **and** `GooXParam : GooPersistentParam<…>` / `GooSerializablePersistentParam<…>` (or
+  `GooBakeAwareSerializableParam<GooX, T>`) — the sanctioned exception to one type per file.
 - Each Goo and each Param carries its own fixed GUID; `Duplicate()` returns `new GooX(Value)`.
 - Files under `Classes/Goo/` and `Classes/Component/` keep the `[Project].Classes` namespace (`Coding - General.md` §2).
 

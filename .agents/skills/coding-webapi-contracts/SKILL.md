@@ -48,8 +48,7 @@ change with the deployment.
   A genuinely optional filter stays nullable with `null` = "no filter".
 - **Send enums as integers** — `urlBuilder.AddParameter("administrativearealtype", (int)AdministrativeArealType.County)`.
   Names bind only while both sides spell them alike: after `Subdivison` → `Subdivision`, `=Subdivision` and `=4` answer
-  identically and `=Subdivison` is a hard 400. `….ToString()` is a latent 400 —
-  `DiGi.GIS.UI.Application/Windows/MainWindow.xaml.cs` still sends `AdministrativeArealType.Subdivision.ToString()`.
+  identically and `=Subdivison` is a hard 400. `….ToString()` is a latent 400 (DiGi.GIS.UI#9 removed the last one).
 - **A JSON request body is renamed on the way out.** `JsonContent.Create(value)` / `PostAsJsonAsync` use
   `JsonSerializerDefaults.Web` (camelCase): `Email`/`Password` travel as `{"email":…,"password":…}`. It works while the
   receiver is case-insensitive (ASP.NET Core is) and surfaces elsewhere as a *domain* refusal. **Pass

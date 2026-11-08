@@ -47,8 +47,8 @@ Every task offered with a dialog is a subclass `UI<BaseTask>` in `DiGi.GIS.Postg
 
 ## 3. Registration
 `DiGi.GIS.PostgreSQL.UI/Create/VisualBackgroundTasks.cs`: `result.Add(Visual(new UI<X>Task(...), "Name", "Description"))`
-inside the `Mode.Server` or `Mode.Client` block (the combined value is spelled `Mode.ServerAndCient` in code — do not
-"fix" it). An unregistered task never appears in the tray; the `Visual` wrapper is where a failed task's exception is
+inside the `Mode.Server` or `Mode.Client` block (both also run under `Mode.ServerAndClient`). An unregistered task never
+appears in the tray; the `Visual` wrapper is where a failed task's exception is
 logged. The description says what the dialog will ask for and any prerequisite task ("Import the sheet index first").
 A task needing an optional deployment (the Year Built runner) is withheld when that part is absent rather than offered
 and failed (`Coding - YOLO.md` §5).
