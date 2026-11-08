@@ -620,7 +620,7 @@ also mirrored per repository as a skill under `.agents/skills/<skill-name>/SKILL
 | `Coding - WPF Deferred Loading.md` | A WPF window or dialog needing data that is slow to read — open at once, read in the background, show a status label and an indeterminate progress bar in the bottom-left corner, refresh in place; a failed read is unknown, never an empty answer. |
 | `Coding - GIS Administrative Data.md` | Touching `administrative_areal_2d`, `building_2d`, or anything keyed by a county code or id. |
 | `Coding - PostgreSQL.md` | Designing schemas, composite unique constraints, batching, timeouts, or converters in PostgreSQL/Npgsql. |
-| `Coding - PostgreSQL Distributed Queue Processing.md` | Distributed bulk update queues — table schema (`claimed_at`, `created_at`, natural uniqueness), atomic lease claims (`FOR UPDATE SKIP LOCKED`), native interval arithmetic, explicit batch acknowledgment, and non-destructive observation. |
+| `Coding - PostgreSQL Distributed Queue Processing.md` | Distributed bulk update queues — table schema (`claimed_at`, `created_at`, natural uniqueness), atomic lease claims (`FOR UPDATE SKIP LOCKED`), native interval arithmetic, explicit batch acknowledgment, poison-row retirement, lease and acknowledgment ownership, and non-destructive observation (an empty queue is not coverage). |
 | `XML Documentation - Create.md` / `- Audit.md` | Adding missing `<summary>` docs, or auditing docs against current signatures. |
 | `GitHub Wiki - General.md` / `- Home.md` / `- Benchmark.md` | Editing a wiki page, a `Home` landing page, or a `Benchmark` performance page. |
 | `GitHub - Branch Pull.md` / `- Branch Synchronization.md` | Pulling repos to their highest SemVer branch, or running the release/patch-bump workflow. |
