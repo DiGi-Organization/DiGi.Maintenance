@@ -1,4 +1,5 @@
 ﻿using DiGi.Maintenance.Classes;
+using System.Globalization;
 using System.Windows.Controls;
 
 namespace DiGi.Maintenance.UI.Controls
@@ -74,9 +75,9 @@ namespace DiGi.Maintenance.UI.Controls
             {
                 if (value != null)
                 {
-                    TextBox_Version_Major.Text = value.Major == -1 ? string.Empty : value.Major.ToString();
-                    TextBox_Version_Minor.Text = value.Minor == -1 ? string.Empty : value.Minor.ToString();
-                    TextBox_Version_Build.Text = value.Build == -1 ? string.Empty : value.Build.ToString();
+                    TextBox_Version_Major.Text = value.Major == -1 ? string.Empty : value.Major.ToString(CultureInfo.CurrentCulture);
+                    TextBox_Version_Minor.Text = value.Minor == -1 ? string.Empty : value.Minor.ToString(CultureInfo.CurrentCulture);
+                    TextBox_Version_Build.Text = value.Build == -1 ? string.Empty : value.Build.ToString(CultureInfo.CurrentCulture);
                 }
                 else
                 {

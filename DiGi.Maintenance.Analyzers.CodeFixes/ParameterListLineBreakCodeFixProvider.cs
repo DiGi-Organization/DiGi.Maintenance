@@ -129,7 +129,7 @@ namespace DiGi.Maintenance.Analyzers.CodeFixes
             }
 
             SyntaxTree? syntaxTree = await document.GetSyntaxTreeAsync(cancellationToken).ConfigureAwait(false);
-            FileLinePositionSpan fileLineSpan = syntaxTree != null ? syntaxTree.GetLineSpan(parameterListSyntax.Span) : default;
+            FileLinePositionSpan fileLineSpan = syntaxTree != null ? syntaxTree.GetLineSpan(parameterListSyntax.Span, cancellationToken) : default;
 
             SyntaxTriviaList leadingTrivia = parameterListSyntax.GetLeadingTrivia();
             string indentationBase = leadingTrivia.ToString().TrimStart('\r', '\n');

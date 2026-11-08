@@ -1,4 +1,5 @@
 ﻿using DiGi.Maintenance.Classes;
+using System.Globalization;
 using System.Reflection;
 using System.Xml.Linq;
 
@@ -33,9 +34,9 @@ namespace DiGi.Maintenance
                     {
                         if (xDocument.Root?.Element("PropertyGroup") is XElement xElement)
                         {
-                            xElement.Element("Major").Value = version.Major.ToString();
-                            xElement.Element("Minor").Value = version.Minor.ToString();
-                            xElement.Element("Build").Value = version.Build.ToString();
+                            xElement.Element("Major").Value = version.Major.ToString(CultureInfo.CurrentCulture);
+                            xElement.Element("Minor").Value = version.Minor.ToString(CultureInfo.CurrentCulture);
+                            xElement.Element("Build").Value = version.Build.ToString(CultureInfo.CurrentCulture);
                         }
 
                         xDocument.Save(path_Properties);

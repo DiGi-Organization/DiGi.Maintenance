@@ -19,4 +19,19 @@
     <!-- Informational version (human-readable, can include git commit later) -->
     <InformationalVersion>$(Major).$(Minor).$(Build).$(Revision)</InformationalVersion>
   </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Configure standard project settings for the latest C# / Visual Studio 2026 -->
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+  </PropertyGroup>
+
+  <!-- Enable XML Documentation file generation for all non-test C# projects -->
+  <PropertyGroup Condition="'$(IsTestProject)' != 'true' And '$(MSBuildProjectExtension)' == '.csproj'">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
 </Project>
