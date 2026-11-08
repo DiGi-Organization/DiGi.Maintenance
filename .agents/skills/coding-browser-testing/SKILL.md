@@ -1,93 +1,78 @@
 ---
 name: coding-browser-testing
-description: "Use when verifying interactive front-end behaviour in a real browser instead of only static code inspection - Playwright (Python) driving an installed Chromium-based browser headless (e.g. Microsoft Edge) to test panel toggles, drag-resize with min/max clamps, keyboard operability, localStorage persistence, responsive stacking and shared header/footer collapse, and verifying rendered output by screenshot statistics and GPU timer queries rather than by state flags. Also covers the hidden attribute losing to any author display rule (a transparent overlay still swallowing pointer events; check document.elementFromPoint). Confirm the toolchain on THIS machine first (availability is per-machine), and run with the host shell, never the isolated sandbox."
+description: "Use when verifying interactive front-end behaviour in a real browser - Playwright (Python) driving an installed Chromium browser to test toggles, drag-resize clamps, keyboard, localStorage, responsive and phone (375x812) layouts, and rendered output by screenshot statistics and GPU timer queries rather than state flags; the hidden attribute losing to a display rule. Confirm the toolchain on this machine first; run with the host shell, never a sandbox."
 ---
 
 # AI Guidelines: Browser Testing (Interactive DoD)
 
-**Goal:** Verify *interactive* front-end behaviour in a real browser — panel toggles, drag-resize with clamps, keyboard operability, `localStorage` persistence, responsive stacking, and shared header/footer collapse — rather than only reading the code.
+Verify *interactive* front-end behaviour — panel toggles, drag-resize with clamps, keyboard operability, `localStorage`
+persistence, responsive stacking, shared header/footer collapse, visual effects — in a real browser rather than by reading
+code. Not for server-side C# logic (xUnit) or a one-off "does it render" check (`curl` is enough). WPF counterpart:
+`Coding - WPF Deferred Loading.md` §7.
 
-## 1. Confirm the toolchain on THIS machine first (do not assume)
+## 1. Confirm the toolchain on THIS machine first
+Availability is per machine; observed versions are one machine's state, not a requirement.
+- Python + pip (`python --version`, `pip --version`).
+- Playwright for Python (`python -m pip show playwright`; install with `python -m pip install playwright` — no Node.js
+  needed). `playwright.__version__` does not exist; use `pip show`.
+- A Chromium browser: Edge `channel="msedge"`, Chrome `channel="chrome"`, or `python -m playwright install chromium`.
+```
+python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(channel='msedge', headless=True); b.close(); p.stop()"
+```
+If the launch fails, try the next channel, else install Chromium. Headless by default.
 
-Availability is **per-machine** — not every computer has these installed. Before the first browser test, probe what is present and install whatever is missing. Treat any versions you observe (e.g. "Playwright 1.62 + Edge 153") as one machine's state, **not a fixed requirement**.
+## 2. Run with the host shell, never an isolated sandbox
+A sandboxed interpreter has no host filesystem, network or `localhost`, so it can neither start nor drive the app. Keep
+the script and screenshots in the scratchpad.
 
-- **Python + pip** — `python --version` and `pip --version`. Needed to install and run Playwright.
-- **Playwright (Python)** — `python -m pip show playwright`. If absent: `python -m pip install playwright`. It bundles its own driver, so **no Node.js is required**.
-- **A Chromium-based browser** — Playwright can drive any one of these; pick whichever the machine has:
-  - Microsoft Edge → `channel="msedge"` (common on Windows)
-  - Google Chrome → `channel="chrome"`
-  - Playwright's own build → `python -m playwright install chromium` (a download; use when no system browser is present)
-
-Pre-flight check (run once per machine before the suite):
-
-    python -c "import playwright; print('playwright OK')"
-    # launch smoke-test with the browser you intend to use:
-    python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(channel='msedge', headless=True); b.close(); p.stop()"
-
-If that launch fails, fall back to the next channel in turn; if none exist, install Chromium. Headless by default (`headless=True`); set `headless=False` to watch it run.
-
-## 2. Run it with the host shell, not the sandbox
-
-- **Use `shell_command` with the host `python`**, not the `run_python` tool. The `run_python` sandbox is isolated — no host filesystem, no network, cannot reach `localhost` — so it cannot start the app or drive it.
-- Keep the test script and its screenshots in the **scratchpad** so the repo stays clean.
-
-## 3. Recipe (start server → drive → assert → clean up)
-
-1. Start the app from the build output (the folder that holds `<App>.dll` and its `wwwroot/`): `dotnet <App>.dll` with `ASPNETCORE_ENVIRONMENT=Development` and `ASPNETCORE_URLS=http://localhost:<port>`.
-2. Poll a cheap endpoint until it returns 200 (bounded timeout) before touching the browser.
+## 3. Recipe
+1. Start the app from its build output (the folder with `<App>.dll` and `wwwroot/`): `dotnet <App>.dll` with
+   `ASPNETCORE_ENVIRONMENT=Development`, `ASPNETCORE_URLS=http://localhost:<port>`.
+2. Poll a cheap endpoint until 200 (bounded) before opening the browser.
 3. `page.goto(url, wait_until="networkidle")`.
-4. Drive it with `page.click(...)`, `page.keyboard.press("Enter" | "Space")`, and `page.mouse.move(...)/down()/up(...)` for drag-resize.
-5. Assert with computed styles (`getComputedStyle`), `get_attribute(sel, "aria-expanded")`, `localStorage.getItem(key)`, and `document.documentElement.scrollWidth <= window.innerWidth` (no horizontal overflow).
-6. `page.set_viewport_size({...})` to exercise responsive breakpoints; `page.screenshot(...)` for a visual check.
-7. **Terminate the server in a `finally`** so no process is left running.
+4. Drive: `page.click(...)`, `page.keyboard.press("Enter" | "Space")`, `page.mouse.move/down/up` in steps for drag-resize.
+5. Assert computed styles (`getComputedStyle`), `get_attribute(sel, "aria-expanded")`, `localStorage.getItem(key)`, and no
+   horizontal overflow (`document.documentElement.scrollWidth <= window.innerWidth`).
+6. `page.set_viewport_size({...})` for breakpoints — including a phone (375×812, §4); `page.screenshot(...)` for a look.
+7. **Terminate the server in `finally`.**
 
-## 4. Gotchas (learned the hard way)
+## 4. Gotchas
+- **A collapsed-by-default panel measures 0** (`display:none`) — open it, then measure; the `localStorage` value is the
+  source of truth. Folded side-panel cards (`.gltf-card-collapsed`) cannot be clicked into either — a `Locator.click` on a
+  checkbox inside times out like a missing control; click `.gltf-card-title` first.
+- **Drag with `page.mouse` steps**, not a one-shot `.drag_to()` (the handlers listen for real `mousemove`/`mouseup`).
+- **Settle before asserting** — a short `page.wait_for_timeout(...)` after a toggle that re-fits on `resize` or a transition.
+- **Rebuild before re-verifying a `.cshtml` change** — Razor views compile at build time; CSS/JS serve live from `wwwroot`
+  (except files a build copies in, `Coding - General.md` §3).
+- **The `hidden` attribute loses to any `display` rule:** `.typology-viewport-empty { display:flex }` keeps a "hidden",
+  transparent overlay swallowing every click on the map. Components that set `display` on a `hidden`-toggled element need
+  `[hidden] { display:none; }`. Symptom: clicks landing on nothing, no console error — check `document.elementFromPoint(x, y)`.
+- **Phone size (375×812) has its own traps** (bodyplan #123, #125): `100vh` is taller than the visible area — use `100dvh`
+  plus safe-area padding; a fixed negative margin clips content under an `overflow:hidden` body; an absolutely positioned
+  hidden input with no positioned ancestor scrolls the page to a blank screen when tapped.
 
-- **A collapsed-by-default panel measures 0.** `getBoundingClientRect().width` of a `display:none` element is `0`. To verify the width of a panel that *starts closed*, **open it first, then measure** — the stored `localStorage` value is the source of truth. (This is a *test* bug, not an app bug.)
-- **Drag with `page.mouse`, not a one-shot `.drag_to()`.** Move to the resizer's centre, `down()`, move in steps, `up()` — this fires the real `mousemove`/`mouseup` the handlers listen for.
-- **Settle before asserting.** Some layouts re-fit on the `window resize` event or a CSS transition; a short `page.wait_for_timeout(...)` after a toggle keeps height assertions from racing the animation.
-- **Static assets vs compiled views.** CSS/JS are served from the source `wwwroot` (always current), but Razor views are compiled at build time — **rebuild before re-verifying a `.cshtml` change**, or you will test a stale view.
-- **Version string gotcha.** `import playwright; playwright.__version__` raises `AttributeError`; use `pip show playwright` for the version.
-- **The `hidden` attribute loses to any `display` rule.** `hidden` is only the user-agent's `display:none`, so an author rule such as `.typology-viewport-empty { display:flex }` keeps a "hidden" overlay on screen — transparent, but still swallowing every pointer event on the map beneath it. Any component CSS that sets `display` on an element toggled with `hidden` needs an explicit `[hidden] { display:none; }` rule. Symptom in a test: clicks that land on nothing, with no console error; check `document.elementFromPoint(x, y)` at the click position.
+## 5. Verify rendered output, not state
+On DiGi.GIS.WebAPI.UI#43 every state assertion (`renderer.shadowMap.enabled`, `light.castShadow`, `getEnvironmentState()`)
+passed while no shade had ever reached the screen; only a screenshot statistic could have failed.
+- **Assert a pixel statistic:** crop `page.screenshot()` (PIL + numpy) and compare mean luminance — off must differ from on
+  beyond the noise floor, on → off → on must restore within ~1 unit. A WebGL canvas cannot be read through `toDataURL`
+  without `preserveDrawingBuffer`, but the compositor screenshot always works.
+- **A per-pixel minimum across parameter values isolates parameter-independent artefacts:** the same pose under three sun
+  positions and effect-off, `min(off - shot_i)` — whatever remains darkens under *every* value (it exposed the winding bug).
+- **GPU cost is not rAF cadence** (that is CPU submit time): wrap `renderer.render` in `EXT_disjoint_timer_query_webgl2`
+  (`beginQuery`/`endQuery`, drain on `QUERY_RESULT_AVAILABLE`, discard on `GPU_DISJOINT_EXT`), launch **headed** with
+  `--disable-frame-rate-limit --disable-gpu-vsync`. Headless `--use-angle=swiftshader` gives unusable numbers. On a fast GPU
+  report the ranking between variants, not absolutes.
 
-## 5. Verifying rendered output, not state
-
-A toggle whose flags flip is not a toggle whose effect is visible. On DiGi.GIS.WebAPI.UI#43 every state
-assertion (`renderer.shadowMap.enabled`, `light.castShadow`, `getEnvironmentState()`) passed while no shade
-had ever reached the screen; the screenshot statistic was the only check that could have failed.
-
-- **Assert a pixel statistic.** Crop a region of `page.screenshot()` (PIL + numpy), compare the mean
-  luminance across the toggle: off must differ from on by more than the noise floor, and on → off → on must
-  restore the original within ~1 unit. A WebGL canvas cannot be read back through `toDataURL` unless
-  `preserveDrawingBuffer` is set, but the compositor screenshot always works.
-- **Pixel-minimum across parameter values isolates parameter-independent artefacts.** To find shading that
-  ignores the sun, take the same pose under three sun positions and the effect-off frame, then
-  `min(off - shot_i)` per pixel: anything left is darkening present under *every* parameter value. One
-  image showed the winding bug that a dozen single screenshots had not.
-- **GPU cost is not rAF cadence.** The interval between `requestAnimationFrame` callbacks is CPU submit
-  time; wrap `renderer.render` in `EXT_disjoint_timer_query_webgl2` (`beginQuery`/`endQuery`, drain when
-  `QUERY_RESULT_AVAILABLE`, discard on `GPU_DISJOINT_EXT`) for the GPU time. Launch **headed** so the real
-  GPU is used, with `--disable-frame-rate-limit --disable-gpu-vsync` so nothing is vsync-capped. Headless
-  `--use-angle=swiftshader` does not keep a rAF cadence and produced unusable numbers — do not report it.
-  On a fast GPU everything is sub-millisecond: report the *ranking* between variants, not the absolutes.
-- **Folded cards measure nothing and cannot be clicked.** Side-panel cards start collapsed
-  (`.gltf-card-collapsed`); `Locator.click` on a checkbox inside one times out and looks like a missing
-  control. Click the card's `.gltf-card-title` first (same rule as the collapsed panel in §4).
-
-## 6. When NOT to use it
-
-- Pure server-side / C# logic — use xUnit (see [Coding - Automatic Tests](Coding%20-%20Automatic%20Tests.md)).
-- A one-off "does it render" check — a `curl` of the endpoint is enough. Spin up the browser for *interactive* DoD items (toggle / drag / keyboard / persistence / responsive).
-
-## 7. DoD → Playwright assertion map
-
-| Interactive DoD item | Playwright assertion |
+## 6. DoD → assertion map
+| Interactive DoD item | Assertion |
 |---|---|
 | Panel open/closed default | `offsetWidth > 0` vs `display === none`, plus `aria-expanded` |
-| Toggle flips state | click → `aria-expanded` flips, modifier class added/removed, resizer shows/hides |
+| Toggle flips state | click → `aria-expanded` flips, modifier class toggles, resizer shows/hides |
 | Drag-resize with clamp | `page.mouse` drag → width within min/max, `localStorage` key set |
-| Widths persist across reload | reload → (open the panel if it defaults closed) → width restored from `localStorage` |
-| Keyboard operable | `focus()` + `keyboard.press("Enter")` / `("Space")` → state toggles |
-| Responsive stacking | `set_viewport_size(<1100px)` → `flex-direction: column`, resizers `display:none`, no horizontal overflow |
-| Shared header/footer collapse | click the layout toggle → `body` class toggles, viewport height grows |
-| Visual effect on/off (shade, fog, highlight) | screenshot region mean luminance differs across the toggle and restores after toggling back (§5) |
+| Widths persist across reload | reload → (open if default closed) → width restored from `localStorage` |
+| Keyboard operable | `focus()` + `keyboard.press("Enter")`/`("Space")` → state toggles |
+| Responsive stacking | `set_viewport_size(<1100px)` → `flex-direction: column`, resizers `display:none`, no overflow |
+| Phone layout | 375×812 → nothing clipped, inputs tap without scrolling the page |
+| Shared header/footer collapse | layout toggle → `body` class toggles, viewport height grows |
+| Visual effect on/off | region luminance differs across the toggle and restores (§5) |

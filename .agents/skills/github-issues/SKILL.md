@@ -1,296 +1,127 @@
 ---
 name: github-issues
-description: "Use when querying, filtering, creating, managing, commenting on, or closing GitHub issues/PRs - filtering issues by labels via FilterIssues.ps1 to reduce token usage, avoiding PowerShell pipeline decoding mangling on existing issue bodies via dedicated Python scripts, verifying an issue's stated premises against the code before implementing it (including that a feature said to 'already work' produces observable output), mandatory Type, Priority and AI Complexity labels plus default assignee (ZiolkowskiJakub) on all new issues, mandatory --body-file usage, blocking relationships as GitHub issue dependencies (gh api .../dependencies/blocked_by, cross-repository, set when the blocker is filed and verified with the blocking GET), GraphQL revision recovery, and filing server-side production runs/deploys/re-derivations as their own follow-up issue with a blocked_by dependency (the code issue closes on its own)."
+description: "Use when creating, editing, commenting on, filtering or closing GitHub issues - --body-file with UTF-8 LF bodies, the \\r\\r\\n table trap and PowerShell decoding corruption (edit through a Python script), GraphQL revision recovery, mandatory labels and default assignee ZiolkowskiJakub, verifying an issue's premises before implementing it, resolution comments with production runs as follow-up issues, FilterIssues.ps1, blocked_by dependencies."
 ---
 
 # AI Guidelines: GitHub Issues & Comments
 
-Guidelines for managing, commenting on, and closing GitHub issues and pull requests across DiGi repositories.
+## 1. Writing bodies through `gh` — files only, UTF-8, LF
+**Never pass markdown inline** (`--body "..."`): in PowerShell the backtick is the escape character (`` `a `` in
+`` `api.digiproject.uk` `` becomes a bell, `` `n `` a newline), `$` expands and quotes break. Write the body to a scratch
+`.md` file (UTF-8 **without BOM**, LF) and pass `--body-file <path>` / `-F "body=@<path>"`; delete it afterwards
+(`GitHub - Branches and Commits.md` §6).
+```bash
+# New issue: mandatory type + priority + ai labels (GitHub - Labels.md) and default assignee ZiolkowskiJakub (unless the user names another)
+gh issue create --repo <owner>/<repo> --title "<Title>" --body-file <path> --label "type: <type>,priority: <priority>,ai: <tier>" --assignee ZiolkowskiJakub
+gh issue edit <number> --repo <owner>/<repo> --add-assignee ZiolkowskiJakub     # if created without one (gh api, scripts)
+gh issue comment <number> --repo <owner>/<repo> --body-file <path>
+gh issue close <number> --repo <owner>/<repo>                                   # after the resolution comment (§3)
+gh api -X PATCH repos/<owner>/<repo>/issues/comments/<comment_id> -F "body=@<path>"
+```
+Sub-issues/sub-tasks for a feature: the tracking-issue pattern (`GitHub - Sub-Issues.md`), never a flat pile.
 
----
-
-## 1. PowerShell CLI Escaping & `--body-file` (Mandatory)
-
-When creating or editing GitHub issues, pull requests, or comments using the GitHub CLI (`gh`), **never pass multi-line markdown or text containing backticks/code spans directly as an inline string argument** (`--body "..."` or `--comment "..."`).
-
-### The Escape Mangling Problem
-In PowerShell (`pwsh`), the backtick (`` ` ``) is the escape character. An inline string such as `"Verified on `api.digiproject.uk` ..."` causes PowerShell to evaluate `` `a `` as the ASCII Bell escape character (`\a` / `^G`), mangling the URL into `\pi.digiproject.uk\`. Similarly, `` `n `` produces newlines, `$` triggers variable expansion, and quotes/backslashes become corrupt.
-
-### Safe Execution Pattern
-Always write the formatted markdown body to a temporary/scratch `.md` file encoded as **UTF-8 without BOM**, and pass the file path via `--body-file` or `@<path>`:
-
-1. **Creating a New Issue (Mandatory Type + Priority + AI Complexity Labels + Default Assignee):**
-   Every new issue added to any repository **must** be assigned at least one `type: *` label, one `priority: *` label, and exactly one `ai: *` complexity tier upon creation (tier criteria: `GitHub - AI Issue Classification.md`), **and must be assigned to `ZiolkowskiJakub` by default** (the maintainer) unless the user explicitly names a different assignee:
-   ```bash
-   gh issue create --repo <owner>/<repo> --title "<Title>" --body-file <path_to_markdown_file> --label "type: <type>,priority: <priority>,ai: <tier>" --assignee ZiolkowskiJakub
-   ```
-   If an issue is ever created without `--assignee` (e.g. via `gh api` or an existing script that doesn't pass it), assign it immediately after with `gh issue edit <number> --repo <owner>/<repo> --add-assignee ZiolkowskiJakub`.
-   *(Note: During label synchronization or audits, update labels **ONLY on open issues** by default. Modify closed issues **ONLY if explicitly instructed by the user**).*
-
-   **Sub-issues / sub-tasks:** when asked to create *sub-issues or sub-tasks* for a feature, do not create a flat pile of independent issues — use the tracking-issue pattern (parent tracking issue + one sub-issue per repository) described in `GitHub - Sub-Issues.md`.
-
-2. **Adding a Comment:**
-   ```bash
-   gh issue comment <issue_number> --repo <owner>/<repo> --body-file <path_to_markdown_file>
-   ```
-
-3. **Closing an Issue with Resolution Comment:**
-   ```bash
-   gh issue comment <issue_number> --repo <owner>/<repo> --body-file <path_to_markdown_file>
-   gh issue close <issue_number> --repo <owner>/<repo>
-   ```
-
-4. **Updating an Existing Comment via API:**
-   ```bash
-   gh api -X PATCH repos/<owner>/<repo>/issues/comments/<comment_id> -F "body=@<path_to_markdown_file>"
-   ```
-
-### Line Endings, `\r\r\n` Translation & Markdown Table Integrity
-When writing markdown body files programmatically (e.g. using Python or PowerShell scripts on Windows):
-1. **The Double-Carriage-Return Trap (`\r\r\n`):** On Windows, writing in default text mode (`open(path, 'w')`) automatically translates `\n` to `\r\n`. If the input text or template already contains Windows `\r\n` line endings, this translation creates `\r\r\n` (CR CR LF).
-2. **Table Rendering Destruction:** GitHub Flavored Markdown (GFM) parses `\r\r\n` as an empty line (`\r` followed by `\r\n`). Because GFM requires table rows to be strictly contiguous, any empty line inside a table breaks parsing and renders raw text with pipes instead of a formatted grid.
-3. **Safe File Writing Pattern:** Always write markdown files with explicit `newline='\n'` in Python, or strip/normalize `\r` before writing:
-   ```python
-   # Python — explicit LF newlines and UTF-8 encoding (no BOM):
-   with open(path, 'w', newline='\n', encoding='utf-8') as f:
-       f.write(markdown_content)
-   ```
-   In PowerShell:
-   ```powershell
-   [System.IO.File]::WriteAllText($path, ($content -replace "`r`n", "`n"), [System.Text.UTF8Encoding]::new($false))
-   ```
-4. **Table Contiguity Rule:** Markdown tables must never contain blank lines between the header row (`| Col1 | Col2 |`), separator row (`|---|---|`), and data rows (`| Data1 | Data2 |`).
-5. **Unicode Typography Preservation:** Always use UTF-8 without BOM to preserve typographic characters (`—` em-dash, `–` en-dash, `§` section sign, `→` arrow, `·` bullet) and prevent codepage replacement artifacts (`` / `ÔÇö`).
-
-### The PowerShell Pipeline Decoding Trap (Capture Mangling)
-When reading or modifying an existing issue body, pull request, or comment:
-1. **The Native Pipeline Decoding Failure:** In Windows PowerShell (`pwsh` or `powershell.exe`), the standard output of external executables (like `gh issue view ... --json body` or `gh api ...`) is automatically decoded by PowerShell's pipeline using `[Console]::OutputEncoding`, which defaults to legacy OEM/ANSI codepages (e.g. CP437 or Windows-1252), **not UTF-8**.
-2. **Irreversible In-Memory Corruption:** Any multi-byte UTF-8 character (`—` em-dash `\u2014`, `–` en-dash `\u2013`, `·` middle dot `\u00b7`, `→` arrow `\u2192`, `§` section sign `\u00a7`, `✅` checkmark `\u2705`) is irrevocably converted to `\ufffd` replacement characters (``) or broken multi-character mojibake (`ÔÇö`) the instant it enters a PowerShell variable or pipeline (`$body = gh ...` or `gh ... | ConvertFrom-Json`). Saving that string out to disk—even with explicit UTF-8 encoding—writes the corrupted replacement characters permanently.
-3. **Inline Command Mangling:** Running inline scripts via `python -c "..."` inside PowerShell causes PowerShell to treat backticks as escape characters and re-encode arguments. Always write scripts to a standalone `.py` file and execute via `python <script_path>`.
-
-### Safe Reading, Modifying, and Editing Workflow (Python Scripts)
-To inspect, check off sub-tasks, or modify existing issue bodies without text corruption:
-1. **Use a Standalone Python Script:** Run a script using `subprocess.run` with explicit `encoding="utf-8"`:
-   ```python
-   import subprocess
-   import json
-
-   res = subprocess.run(["gh", "api", "repos/<owner>/<repo>/issues/<number>"], capture_output=True, text=True, encoding="utf-8")
-   body = json.loads(res.stdout)["body"]
-
-   # Apply the modification (e.g. check off a sub-task)
-   target = "- [ ] **S8 · Add a `building_data` write endpoint"
-   replacement = "- [x] **S8 · Add a `building_data` write endpoint"
-   assert target in body, "Target text not found in issue body!"
-   modified_body = body.replace(target, replacement)
-
-   # Mandatory Pre-Save Integrity Assertions
-   assert "\ufffd" not in modified_body, "Corruption detected: replacement character present!"
-   assert "ÔÇ" not in modified_body, "Corruption detected: CP1252 mojibake present!"
-
-   # Write with explicit LF newlines and UTF-8
-   with open("temp_body.md", "w", newline="\n", encoding="utf-8") as f:
-       f.write(modified_body)
-
-   # Edit via --body-file
-   subprocess.run(["gh", "issue", "edit", "<number>", "--repo", "<owner>/<repo>", "--body-file", "temp_body.md"], check=True)
-   ```
-2. **Mandatory Pre-Save Integrity Assertions:**
-   Before updating any issue body or comment, verify:
-   - Zero replacement characters: `assert "\ufffd" not in text`
-   - Zero codepage artifacts (`ÔÇ`, `â`)
-   - All expected markdown tables and headers remain structurally contiguous.
-
-### Recovery via GitHub GraphQL API History
-If an issue's markdown body is ever accidentally corrupted or mangled:
-1. **Do not attempt manual reconstruction or lossy rewriting.**
-2. **Query GitHub's GraphQL API:** GitHub maintains the complete immutable edit history under `userContentEdits`:
-   ```graphql
-   query {
-     repository(owner: "<owner>", name: "<repo>") {
-       issue(number: <number>) {
-         userContentEdits(first: 5) {
-           nodes {
-             editedAt
-             diff
-           }
-         }
-       }
-     }
-   }
-   ```
-3. **Extract Pristine Revision:** Each edit node provides `diff` containing the exact, pristine text of that revision. Retrieve the uncorrupted revision, apply the intended change with strict UTF-8 (`newline='\n'`, `encoding='utf-8'`), and update via `--body-file`.
-
----
-
-## 2. Verifying an Issue Before Implementing It
-
-An issue's problem statement is a hypothesis — including one you wrote yourself. Confirm each claim
-against the code before building to it, because an issue that is wrong about the cause is usually also
-wrong about the fix.
-
-- **Does the optimization it says is missing already exist?** Open the file it names.
-- **Does the feature it says "already works" actually produce output?** Wired-up flags are not a rendered
-  result. DiGi.GIS.WebAPI.UI#43 stated "shade is already emitted and received" — every flag was set, and no
-  shadow had ever reached the screen in any scene (a NaN in the receiver shader). Verify the observable
-  effect (screenshot statistic, buffer readback, response body) before building on the premise
-  (`Coding - Browser Testing.md` §5).
-- **Is the quoted latency reproducible?** Run the repository's own benchmark `[Fact]` (isolated — see
-  `Coding - Automatic Tests.md` §4) rather than trusting a figure in the description.
-- **Does the described failure reproduce at all?** Write the reproducing `[Fact]` first.
-- **Is the compile-time claim true?** "Does not compile", "CS0121-ambiguous", "binds to the `object`
-  overload" are measurable: build a scratch console app that reproduces the overload set and prints which
-  overload each call hits (`Coding - General.md` §1 rule 17). Overload resolution is where reasoning fails
-  most quietly — in `DiGi.Core#5` the implementation summary and the review draft each corrected the issue's
-  premise wrongly before a probe showed the issue had been right.
-
-- **Does one rule fit every consumer the issue names?** Before adopting the fix an issue proposes for
-  "the three places that do X", open each consumer and look at the **shape of what it writes**. A
-  report that counts can take "count it for every container"; a table with **one row per building**
-  cannot — processing a building under three containers is last-writer-wins, i.e. the arbitrary
-  assignment the issue set out to remove. `DiGi.GIS.PostgreSQL#77` named three consumers of a nested
-  subdivision layer and one rule; the coverage report took it, the occupancy and building-data tables
-  needed the opposite (exactly one subdivision per building, decided on the write side), and the
-  municipality aggregation of the report needed a third answer (its own polygon, not a sum). One rule
-  applied to all three would have fixed the report and re-broken the tables.
-
-When a claim turns out to be wrong, **correct the record in a comment with the evidence**. The issue text
-is what the next reader trusts, and a closed issue keeps teaching whatever it last said.
-
-**The sweep runs the other way too — after a design change, revisit the open issues that were written
-against the old design.** Issues carry "Verified premises" sections pinned to a commit; a redesign
-invalidates them silently, and the next agent implements the stale premise faithfully. When a change
-removes or re-parents a public type, renames a `_type`, or moves a member (`TypologyAppearanceCollection.Key`
-→ `Query.Key`), search open issues in every consuming repository for the affected names
-(`gh issue list --search "<TypeName>"` per repo, or `FilterIssues.ps1` §4) and post **one comment per
-affected issue**: a shared before/after table of what changed, then the issue-specific effect on its
-premises, approach and acceptance criteria. Do not edit the issue body — the comment keeps the original
-reasoning readable beneath the correction. Worked example: the `DiGi.Typology.Visual` redesign of
-2026-09-11 removed `VisualRange<T>` and the level fallback appearance; five open issues across
-`DiGi.Typology` (#20, #21) and `DiGi.GIS.WebAPI.UI` (#16, #17, #19) had built on both, and one (#17) had a
-whole wire-format table and a `template` endpoint motivated by a generic `_type` that no longer existed.
-
-**Worked example.** [DiGi.Geometry#2](https://github.com/DiGi-Organization/DiGi.Geometry/issues/2) asked for
-spatial partitioning to cut a reported 15-60 s latency. `Difference.cs` already held an `STRtree`, and the
-`< 3.0 s` acceptance criterion was already met at ~1.3 s measured. The real defect was a crash on dense
-input. Implementing the issue as written would have added a second spatial index and two NuGet packages
-for no measurable gain.
-
----
-
-## 3. Standard Issue Resolution Comment Structure
-
-When resolving and closing an issue, provide a structured comment covering:
-
-1. **Resolution & Commits:**
-   - Mention the commit SHA(s), version branch, and target repository.
-2. **Summary of Changes:**
-   - Technical summary of the fix or feature implemented.
-   - List of modified and added classes/files.
-3. **Automated & Integration Tests:**
-   - Test facts added to `DiGi.Test` and verification commands run.
-4. **Live Deployed Verification (if applicable):**
-   - Results of manual verification against deployed WebAPI endpoints or services.
-   - When that verification belongs to a follow-up issue (below), say so: "Live verification: not run — see #N".
-
-### Production runs go in a follow-up issue, not in the code issue's plan
-A code issue's plan ends where the code is reviewable and committable. Everything that has to happen
-**on a server, later** — deploying, running tray-application tasks, re-deriving or re-running data,
-before/after evidence and tallies, guideline/README propagation — is filed as **its own issue** (mandatory
-labels and assignee, §1) and linked with a `blocked_by` dependency on the code issue (§5).
-- **Why:** the code change can be reviewed and closed on its own; the runs happen elsewhere and later, and
-  their counters belong with the issue that tracks them. Mixing the two keeps the code issue open
-  indefinitely. (Asked for explicitly on `DiGi.GIS.PostgreSQL#77` → `#78`.)
-- **How:** end the plan with "Out of scope — tracked in #N" listing every run, evidence and docs step;
-  close the code issue with the resolution comment above, stating the live verification is deferred to #N.
-
----
-
-## 4. Searching & Filtering Issues (`FilterIssues.ps1`)
-
-To locate, triage, or inspect GitHub issues across repositories without wasting context tokens on bloated JSON payloads, use the dedicated maintenance script `DiGi.Maintenance/Scripts/FilterIssues.ps1`:
-
+**The `\r\r\n` trap:** Windows text mode turns `\n` into `\r\n`, so text already holding `\r\n` is written as `\r\r\n`,
+which GitHub reads as a blank line — and a blank line inside a table breaks it into raw pipes. Write explicitly:
+```python
+with open(path, 'w', newline='\n', encoding='utf-8') as f:
+    f.write(markdown_content)
+```
 ```powershell
-# Filter issues in a specific repository by labels (supports standard names and shorthands)
+[System.IO.File]::WriteAllText($path, ($content -replace "`r`n", "`n"), [System.Text.UTF8Encoding]::new($false))
+```
+Table rows (header, separator, data) stay contiguous; UTF-8 without BOM keeps `—`, `–`, `§`, `→`, `·` intact.
+
+**Reading an existing body corrupts it in PowerShell.** Native output (`gh issue view --json body`, `gh api`) is decoded
+with `[Console]::OutputEncoding` (an OEM/ANSI code page), so every multi-byte character becomes `�` or mojibake
+(`ÔÇö`) the moment it enters a variable or pipeline — and saving it writes the damage permanently. `python -c "..."` inside
+PowerShell is mangled the same way. Edit through a standalone `.py` script:
+```python
+import json, subprocess
+
+res = subprocess.run(["gh", "api", "repos/<owner>/<repo>/issues/<number>"], capture_output=True, text=True, encoding="utf-8")
+body = json.loads(res.stdout)["body"]
+
+target = "- [ ] **S8 · Add a `building_data` write endpoint"
+assert target in body, "Target text not found"
+body = body.replace(target, target.replace("- [ ]", "- [x]", 1))
+
+assert "�" not in body and "ÔÇ" not in body and "â" not in body, "Encoding corruption"   # also check tables stay contiguous
+with open("temp_body.md", "w", newline="\n", encoding="utf-8") as f:
+    f.write(body)
+subprocess.run(["gh", "issue", "edit", "<number>", "--repo", "<owner>/<repo>", "--body-file", "temp_body.md"], check=True)
+```
+**Recovery:** never reconstruct a corrupted body by hand — GitHub keeps every revision; take the pristine text from
+`userContentEdits` and re-apply the change as above:
+```graphql
+query { repository(owner: "<owner>", name: "<repo>") { issue(number: <number>) { userContentEdits(first: 5) { nodes { editedAt diff } } } } }
+```
+
+## 2. Verify an issue's premises before implementing it
+The problem statement is a hypothesis — including one you wrote. An issue wrong about the cause is usually wrong about the
+fix.
+- **Does the "missing" optimization already exist?** Open the file it names. DiGi.Geometry#2 asked for spatial
+  partitioning against 15–60 s; `Difference.cs` already held an `STRtree`, the `< 3.0 s` criterion was met at ~1.3 s, and
+  the real defect was a crash on dense input — as written it would have added a second index and two packages.
+- **Does a feature "already working" produce output?** Wired flags are not a rendered result: DiGi.GIS.WebAPI.UI#43 said
+  shade was "emitted and received" while no shadow had ever reached the screen. Verify the observable effect
+  (`Coding - Browser Testing.md` §5).
+- **Is a quoted latency reproducible?** Run the repository's benchmark fact in isolation (`Coding - Performance.md` §2).
+- **Does the failure reproduce?** Write the reproducing fact first (`Coding - Automatic Tests.md` §4).
+- **Is a compile-time claim true?** Probe it with a scratch console app (`Coding - General.md` §1.17; in `DiGi.Core#5` the
+  summary and review each "corrected" the issue wrongly).
+- **Does one rule fit every consumer named?** Look at the shape of what each writes: DiGi.GIS.PostgreSQL#77 proposed one
+  rule for three consumers of nested subdivisions — the report could count a building under every container, the
+  one-row-per-building tables needed exactly one (decided on write), the municipality aggregate its own polygon.
+
+A wrong claim is corrected **in a comment with the evidence** (a closed issue keeps teaching what it last said).
+**After a design change, sweep the open issues written against the old design:** when a public type is removed or
+re-parented, a `_type` renamed or a member moved (`TypologyAppearanceCollection.Key` → `Query.Key`), search each consuming
+repository (`gh issue list --search "<TypeName>"`, `FilterIssues.ps1`) and post **one comment per affected issue** — a
+shared before/after table plus the effect on its premises, approach and acceptance — without editing the body (the
+2026-09-11 `DiGi.Typology.Visual` redesign invalidated DiGi.Typology #20, #21 and DiGi.GIS.WebAPI.UI #16, #17, #19).
+
+## 3. Resolution comment, then close
+Cover: (1) commit SHA(s), version branch, repository; (2) technical summary and modified/added files; (3) facts added and
+commands run; (4) live verification against deployed services, or "Live verification: not run — see #N".
+
+**Production runs are a follow-up issue, not part of the code issue's plan.** Everything that happens on a server later —
+deploying, tray-task runs, re-deriving data, before/after tallies, guideline/README propagation — is filed as its own issue
+(mandatory labels and assignee) with a `blocked_by` dependency on the code issue (§5); the plan ends with "Out of scope —
+tracked in #N" and the code issue closes on its own (`DiGi.GIS.PostgreSQL#77` → `#78`). Delete the implementation plan
+on closure (`GitHub - Branches and Commits.md` §6).
+
+## 4. Searching (`FilterIssues.ps1`) — 1–2 lines per issue instead of raw JSON
+```powershell
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/FilterIssues.ps1" -Repo "DiGi.Core" -Labels "ai: standard, priority: high"
-
-# Search across all repositories by label shorthands
-PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/FilterIssues.ps1" -Labels "standard, high"
-
-# Search by keyword in title/body
+PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/FilterIssues.ps1" -Labels "standard, high"          # all repositories
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/FilterIssues.ps1" -Repo "DiGi.GIS.PostgreSQL" -Search "subdivision"
-
-# Inspect a single issue with description preview
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/FilterIssues.ps1" -Repo "DiGi.GIS.PostgreSQL" -Issue 42 -Detail
-
-# Emit minimal JSON for programmatic handling
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/FilterIssues.ps1" -Labels "critical" -Json
 ```
+Shorthands: `high` → `priority: high`, `standard` → `ai: standard`, `bug` → `type: bug`, `in-progress`/`parked` →
+`status: …`. It does not show dependencies yet (§5).
 
-### Key Advantages for AI Agents:
-- **Token Efficiency:** Formats issue summaries into 1–2 lines per issue, saving >90% of tokens compared to raw GitHub CLI JSON.
-- **Label Shorthands:** Automatically normalizes common terms (`high` $\rightarrow$ `priority: high`, `standard` $\rightarrow$ `ai: standard`, `bug` $\rightarrow$ `type: bug`, `in-progress` $\rightarrow$ `status: in-progress`, `parked` $\rightarrow$ `status: parked`).
-- **Flexible Scope:** Omit `-Repo` to search across all DiGi repositories under the owner in one command.
-
----
-
-## 5. Blocking Relationships — GitHub Issue Dependencies (Mandatory)
-
-When one issue cannot be completed until another lands, record it as a **GitHub issue dependency**
-("blocked by" / "blocking"), not only as prose. The dependency is structured metadata: GitHub renders it on
-both issues, projects and the issue list can filter on it, and it survives body edits. It works **across
-repositories** — the normal case in DiGi, where a `DiGi.Analytical` method blocks a `DiGi.GLTF` and a
-`DiGi.GIS.PostgreSQL` issue at once. Prose cross-references (`owner/repo#N` in the body, §5 of
-`GitHub - Sub-Issues.md`) stay for the *why*; the dependency carries the *what*.
-
-### When to set it
-
-- A **blocker** issue is created because two or more issues turned out to share one root cause or one
-  missing capability — file the blocker where the capability belongs (the lowest repository in the
-  dependency chain), then mark every dependent issue as blocked by it. Canonical example:
-  `DiGi.Analytical#3` (shared outward-envelope-faces `Query`) blocks `DiGi.GLTF#1` and
-  `DiGi.GIS.PostgreSQL#84`.
-- A sub-issue of a tracking issue depends on a sibling landing first (`GitHub - Sub-Issues.md` §6 orders
-  them "in dependency order" — make that order explicit with dependencies between the siblings).
-- A code issue is followed by a production-run issue (`#77` → `#78` pattern): the run is blocked by the code.
-- An issue waits on an upstream fix in another DiGi repository (the `TODO [Marker]` removal condition names
-  an issue — set the dependency on it too).
-
-### Commands (REST, via `gh api`; `issue_id` is the target's **node id**, not its number)
-
+## 5. Blocking relationships — GitHub issue dependencies (mandatory)
+When an issue cannot complete until another lands, record a **dependency** ("blocked by"/"blocking"), not only prose. It
+works across repositories; prose references (`owner/repo#N`) keep the *why*. Set it when:
+- several issues share one root cause or missing capability — file the blocker in the lowest repository of the chain and
+  block every dependent (`DiGi.Analytical#3` blocks `DiGi.GLTF#1` and `DiGi.GIS.PostgreSQL#84`);
+- a sub-issue waits for a sibling (`GitHub - Sub-Issues.md` §6);
+- a production-run issue follows a code issue (§3);
+- an issue waits on an upstream fix (also the `TODO [Marker]` removal condition).
 ```bash
-# the blocker's id (once)
-gh api repos/<owner>/<repo>/issues/<blocker_number> --jq .id
-
-# mark <dependent> as blocked by the blocker (works cross-repository); 201 on success
-gh api -X POST repos/<owner>/<dependent_repo>/issues/<dependent_number>/dependencies/blocked_by -F issue_id=<blocker_id>
-
-# read both directions
+gh api repos/<owner>/<repo>/issues/<blocker_number> --jq .id                                                         # node id, not the number
+gh api -X POST repos/<owner>/<dependent_repo>/issues/<dependent_number>/dependencies/blocked_by -F issue_id=<blocker_id>   # 201
 gh api repos/<owner>/<repo>/issues/<number>/dependencies/blocked_by --jq '.[] | "\(.repository.full_name)#\(.number) \(.state)"'
 gh api repos/<owner>/<repo>/issues/<number>/dependencies/blocking  --jq '.[] | "\(.repository.full_name)#\(.number) \(.state)"'
-
-# remove a dependency that no longer holds
 gh api -X DELETE repos/<owner>/<dependent_repo>/issues/<dependent_number>/dependencies/blocked_by/<blocker_id>
 ```
-
-`-F issue_id=…` sends the id as a number; `-f` would send a string and the API rejects it. The endpoints
-are GET-safe: an empty `[]` from `blocked_by` proves the API is available before the first POST.
-
-### Rules
-
-1. **Set the dependency at creation time** of the blocker — in the same `gh` session that files it, right
-   after `gh issue create` returns the number — and **post one linking comment on each dependent issue**
-   saying what the shared root is and how the dependent issue's own scope narrows (what it keeps, what
-   moves to the blocker). Do not edit the dependent bodies; the comment keeps the original reasoning
-   readable beneath the change (same rule as §2's premise corrections).
-2. **Verify with the GET** after setting: read `blocking` on the blocker and confirm every dependent is
-   listed. Do not report the link as done from the POST alone.
-3. **A blocked issue is not started** until its blockers are closed — when picking up an issue, read
-   `dependencies/blocked_by` first (`FilterIssues.ps1` does not show dependencies yet). If work must
-   proceed anyway (a workaround shipped in the consumer, as `gltf-viewer-core.js` did for `DiGi.GLTF#1`),
-   the workaround is `TODO [Marker]` temporary code whose removal condition is the blocker's closure.
-4. **Closing a blocker** does not close the dependents — go through each `blocking` entry and either
-   resume it or comment what it now needs. Closing a dependent while a blocker is open needs a comment
-   explaining why the dependency no longer applies, and the dependency removed (`DELETE`).
-5. Dependencies complement, never replace, the tracking-issue pattern: parent ↔ child is the Sub-issues
-   table (`GitHub - Sub-Issues.md`), blocked-by is for ordering between issues that are not parent and child.
+`-F` sends the id as a number (`-f` sends a string, rejected); an empty `[]` from the GET proves the API is available.
+1. **Set it when the blocker is filed** (same session, right after `gh issue create`) and post one linking comment per
+   dependent: the shared root and how its own scope narrows — never edit the dependent bodies.
+2. **Verify with the `blocking` GET** on the blocker; never report the link from the POST alone.
+3. **A blocked issue is not started** until its blockers close — read `blocked_by` first. A workaround shipped meanwhile is
+   `TODO [Marker]` code whose removal condition is the blocker's closure (`gltf-viewer-core.js` for `DiGi.GLTF#1`).
+4. **Closing a blocker does not close dependents** — resume or comment each `blocking` entry. Closing a dependent while a
+   blocker is open needs a comment and the dependency `DELETE`d.
+5. Parent ↔ child is the Sub-issues table; dependencies order issues that are not parent and child.

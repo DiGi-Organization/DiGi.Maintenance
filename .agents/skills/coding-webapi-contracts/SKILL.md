@@ -1,314 +1,155 @@
 ---
 name: coding-webapi-contracts
-description: "Use when changing a WebAPI controller's route, parameter names or validation, or when writing or maintaining an HTTP client of one - why a renamed query parameter breaks clients with no compile error and no runtime error (ASP.NET silently ignores an unknown parameter and returns the unfiltered result), the binding traps where an omitted parameter keeps default(T) and an enum sentinel that is not 0 makes the obvious guard dead code, sending enum values as integers, the client base-URI constant and /Query plumbing pattern, gating an endpoint that is not deployed yet, and the three controller-side defects (exactly one public constructor - a second one 500s every action via ActivatorUtilities; DiGi objects returned as Content(Core.Convert.ToSystem_String(x), \"application/json\") rather than Ok(x); no action-level [Produces] over string-bodied error paths, where 406 masks the error) plus the timeout layering (PostOptions.Delay 20 s per attempt, HttpClient.Timeout >= server commandtimeout)."
+description: "Use when changing a WebAPI route, parameter, controller or extension, or writing an HTTP client of one - renamed query parameters break clients silently, omitted parameters keep default(T), enum sentinels and integers on the wire, camelCase JSON bodies, /Query client plumbing, failures named by status (503/502) never read as empty, timeout layering, Modify.InitializeAsync entry point, one public constructor, Content(...) instead of Ok(x), no [Produces] over string errors."
 ---
 
 # Coding — WebAPI Contracts (Controllers and Their HTTP Clients)
 
-Rules for the wire contract between a `DiGi.*.WebAPI` controller and the code that calls it over HTTP.
-Read this when changing a controller's route, parameter names or validation, and when writing or
-maintaining a client (`DiGi.GIS.WebAPI.UI`, `DiGi.GIS.UI`, a background task, a page script).
+The wire contract between a `DiGi.*.WebAPI` controller and its HTTP callers (`DiGi.GIS.WebAPI.UI`, `DiGi.GIS.UI`, background
+tasks, page scripts). Live testing: `Coding - Deployed WebAPI.md`; 3D: `Coding - WebAPI GLTF.md`; API keys:
+`Coding - WebAPI Simple Authorization.md`.
 
-For *testing* against the live host see [Coding - Deployed WebAPI.md](Coding%20-%20Deployed%20WebAPI.md).
-For the `DiGi.GLTF` 3D pipeline see [Coding - WebAPI GLTF.md](Coding%20-%20WebAPI%20GLTF.md).
+## 1. The contract has no compiler — a renamed parameter breaks clients silently
+> A client reaches a `*.WebAPI` over HTTP only (no `HintPath`, no project reference). Rename a `[FromQuery(Name = "…")]`
+> and the client keeps sending the old name, ASP.NET Core ignores it, and the endpoint answers **200 with the unfiltered
+> result**.
 
----
-
-## 1. The contract has no compiler — a renamed parameter breaks clients in silence
-
-> **A client reaches a `*.WebAPI` over HTTP only.** `DiGi.GIS.WebAPI.UI` has no `HintPath` and no
-> project reference to `DiGi.GIS.WebAPI`. Renaming a `[FromQuery(Name = "…")]` produces **no compile
-> error in the client, and no runtime error either** — ASP.NET Core silently ignores a query parameter
-> it does not recognise and answers with the *unfiltered* result.
-
-Real incident. `DiGi.GIS.WebAPI` renamed `itemsbypoint`'s filter from `type` to
-`administrativearealtype`. `DiGi.GIS.WebAPI.UI/Controllers/Building2DController.cs` kept sending
-`type=County` and nothing anywhere reported a problem. Measured against the deployed host:
-
-| Request | Bytes | First item returned |
-|---|---|---|
-| `itemsbypoint?x=638000&y=486000&type=County` | 2 119 202 | `Polska`, code `10` — **the country** |
-| `itemsbypoint?x=638000&y=486000&administrativearealtype=2` | 387 089 | `m. St. Warszawa`, code `1465` |
-
-The client read `FirstOrDefault()`, got the country, resolved no county, and dropped `countyid` from
-every downstream request — a wrong answer plus a 5x payload, for months, with a clean build.
-
-**After changing any route or parameter name, diff the two sides by hand.** Nothing else catches it.
-Declared names on the API side:
-
+`itemsbypoint` renamed `type` to `administrativearealtype`; `DiGi.GIS.WebAPI.UI/Controllers/Building2DController.cs` kept
+sending `type=County` and got every level covering the point, headed by `Polska` (2 119 202 bytes instead of 387 089 for
+`m. St. Warszawa`), resolved no county and dropped `countyid` downstream — for months, with a clean build.
+**After changing a route or parameter name, diff both sides by hand:**
 ```bash
 grep -rnoE '\[FromQuery\(Name = "[^"]+"\)\]' --include=*.cs DiGi.GIS.WebAPI/Classes/Controller/ | sort -u
-```
-
-Sent names across **every** consumer — the GIS Web API has more than one, which is easy to forget:
-
-```bash
 grep -rnoE 'AddParameter\("[^"]+"|api\.digiproject\.uk[^"]*' --include=*.cs DiGi.GIS.WebAPI.UI DiGi.GIS.UI DiGi.GIS.IO | sort -u
+grep -rnE "fetch\(|\?[a-z]+=" --include=*.js --include=*.cshtml
 ```
-
-| Consumer | Where |
-|---|---|
-| `DiGi.GIS.WebAPI.UI` | every file under `Controllers/`, `Query/`, `Create/` |
-| `DiGi.GIS.UI` (desktop) | `DiGi.GIS.UI.Application/Windows/MainWindow.xaml.cs`, `DiGi.GIS.UI/Modify/TryDownload.cs` |
-| `DiGi.GIS.IO` | `Modify/Update.cs` (builds an `ortodatas/imagebyreference` URL into a spreadsheet cell) |
-
-Also sweep the front end, which builds its own query strings:
-`grep -rnE "fetch\(|\?[a-z]+=" --include=*.js --include=*.cshtml`.
-
-Renaming a parameter is a **breaking wire change**. Prefer adding the new name and accepting both for
-one release; when that is not worth it, treat the rename as a deployment step with a client change
-landing alongside it.
-
----
+Consumers of the GIS Web API: `DiGi.GIS.WebAPI.UI` (`Controllers/`, `Query/`, `Create/`), `DiGi.GIS.UI`
+(`MainWindow.xaml.cs`, `Modify/TryDownload.cs`), `DiGi.GIS.IO` (`Modify/Update.cs` builds an `ortodatas/imagebyreference`
+URL), and the front end. A rename is a **breaking wire change**: accept both names for one release, or ship the client
+change with the deployment.
 
 ## 2. Binding traps that fail silently
+- **An omitted parameter is not a binding failure.** `[ApiController]` answers 400 for a present but unparseable value
+  (`administrativearealtype=`, `=Nonsense`), but an **absent** one keeps `default(T)` (`0`, `0.0`, `false`, `(T)0`). When
+  absence must be distinguishable, **bind nullable and reject `null`** — a `double x` cannot tell an omitted coordinate
+  from `0`.
+- **An enum sentinel that is not `0` makes the obvious guard dead code.** `AdministrativeArealType.Undefined` is `-1`, so an
+  omitted non-nullable parameter binds `Country (0)` and `== Undefined` never fires — omitting `administrativearealtype` on
+  `administrativeareal2Dreferencesbyadministrativearealtype` returns a payload byte-identical to `=0`:
+  ```csharp
+  // RIGHT - absence is representable, so it can be rejected
+  public async Task<IActionResult> GetAsync([FromQuery(Name = "administrativearealtype")] AdministrativeArealType? administrativeArealType, CancellationToken cancellationToken = default)
+  {
+      if (administrativeArealType is null || administrativeArealType.Value == AdministrativeArealType.Undefined)
+      {
+          return BadRequest();
+      }
+  ```
+  A genuinely optional filter stays nullable with `null` = "no filter".
+- **Send enums as integers** — `urlBuilder.AddParameter("administrativearealtype", (int)AdministrativeArealType.County)`.
+  Names bind only while both sides spell them alike: after `Subdivison` → `Subdivision`, `=Subdivision` and `=4` answer
+  identically and `=Subdivison` is a hard 400. `….ToString()` is a latent 400 —
+  `DiGi.GIS.UI.Application/Windows/MainWindow.xaml.cs` still sends `AdministrativeArealType.Subdivision.ToString()`.
+- **A JSON request body is renamed on the way out.** `JsonContent.Create(value)` / `PostAsJsonAsync` use
+  `JsonSerializerDefaults.Web` (camelCase): `Email`/`Password` travel as `{"email":…,"password":…}`. It works while the
+  receiver is case-insensitive (ASP.NET Core is) and surfaces elsewhere as a *domain* refusal. **Pass
+  `options: JsonSerializerOptions.Default` whenever the contract names the properties** (naming policy `null`, a cached
+  instance). Unaffected: primitive/collection bodies, and `JsonObject`/`JsonArray` bodies (keys are data). Exposed: body
+  *objects* (`Building2DReferencesByPagingParameter`, `CountByAdministrativeAreal2DIdsParameter`, the login relay's
+  `UserLogin`).
 
-### An omitted parameter is not a binding failure
-
-`[ApiController]` returns an automatic **400** when a value is present but unparseable — verified
-against the deployed host: `administrativearealtype=` → 400, `administrativearealtype=Nonsense` → 400.
-It does **not** fire when the parameter is **absent**. An absent simple-type parameter simply keeps
-`default(T)`: `0` for `int`, `0.0` for `double`, `false` for `bool`, `(T)0` for an enum.
-
-> **If "absent" must be distinguishable from a legitimate value, bind the parameter as nullable and
-> reject `null` explicitly.** A non-nullable `double x` cannot tell an omitted coordinate from the
-> valid coordinate `0`.
-
-### An enum sentinel that is not `0` makes the obvious guard dead code
-
-`DiGi.GIS.PostgreSQL.Enums.AdministrativeArealType` is `Undefined = -1`, `Country = 0`,
-`Voivodeship = 1`, `County = 2`, `Municipality = 3`, `Subdivision = 4`. So for a non-nullable binding:
-
-```csharp
-// WRONG - never fires for an omitted parameter, which binds to Country (0), not Undefined (-1).
-public async Task<IActionResult> GetAsync([FromQuery(Name = "administrativearealtype")] AdministrativeArealType administrativeArealType, CancellationToken cancellationToken = default)
-{
-    if (administrativeArealType == AdministrativeArealType.Undefined)
-    {
-        return BadRequest();
-    }
-```
-
-Verified against the deployed host: omitting `administrativearealtype` on
-`administrativeareal2Dreferencesbyadministrativearealtype` returns a payload **byte-identical** to
-passing `administrativearealtype=0`, headed by `Polska`. The caller asked nothing and silently got
-countries.
-
-```csharp
-// RIGHT - absence is representable, so it can be rejected.
-public async Task<IActionResult> GetAsync([FromQuery(Name = "administrativearealtype")] AdministrativeArealType? administrativeArealType, CancellationToken cancellationToken = default)
-{
-    if (administrativeArealType is null || administrativeArealType.Value == AdministrativeArealType.Undefined)
-    {
-        return BadRequest();
-    }
-```
-
-Keep a nullable binding where the parameter genuinely **is** optional, and let `null` mean "no filter" —
-just do not also compare it to the sentinel and imagine that covers the omitted case.
-
-### Send enum values as integers
-
-A client must put the **integer** on the wire, not the member name:
-`urlBuilder.AddParameter("administrativearealtype", (int)AdministrativeArealType.County)`. The member
-name binds only against a build whose enum spelling matches, and DiGi has already shipped one rename
-(`Subdivison` → `Subdivision`) that makes the name a moving target while the integer never moved.
-Against the deployed host: `administrativearealtype=Subdivision` and `administrativearealtype=4`
-return byte-identical payloads, while the pre-rename `administrativearealtype=Subdivison` is a hard
-**400**.
-
-`…ToString()` on the enum is therefore a latent 400 waiting for the next rename — it is what
-`DiGi.GIS.UI.Application/Windows/MainWindow.xaml.cs` does today (`AdministrativeArealType.Subdivision.ToString()`),
-which works only because that client and the deployed build happen to agree on the spelling right now.
-Cast to `int` instead. See [Coding - Deployed WebAPI.md](Coding%20-%20Deployed%20WebAPI.md) §4 and
-[Coding - GIS Administrative Data.md](Coding%20-%20GIS%20Administrative%20Data.md) §6.
-
-### A JSON request body is renamed on the way out
-
-The query string is not the only half of the contract without a compiler. `System.Net.Http.Json` —
-`JsonContent.Create(value)`, `httpClient.PostAsJsonAsync(uri, value)` — serializes with
-**`JsonSerializerDefaults.Web`** when given no options, and that default's naming policy is **camelCase**. A
-body object declaring `Email` and `Password` therefore goes on the wire as `{"email":"…","password":"…"}`,
-whatever the contract says.
-
-It usually works anyway, which is what makes it a trap: ASP.NET Core's input formatter also runs on web
-defaults, with `PropertyNameCaseInsensitive = true`, so the receiver binds the renamed properties without
-complaint. The dependency stays invisible until a receiver is stricter — and then it surfaces as a *domain*
-refusal, not a format error. Measured on `DiGi.GIS.WebAPI.UI`'s login relay, whose stated contract is
-`DiGi.User.Classes.UserLogin`'s `Email` / `Password`:
-
-| Sent as | Recorded on the wire |
-|---|---|
-| `JsonContent.Create(userLoginParameter)` | `{"email":"…","password":"…"}` |
-| `JsonContent.Create(userLoginParameter, options: JsonSerializerOptions.Default)` | `{"Email":"…","Password":"…"}` |
-
-**Pass `options: JsonSerializerOptions.Default` whenever the contract names the properties.** Its naming
-policy is `null`, so the declared names are kept, and it is a cached framework instance rather than a fresh
-`JsonSerializerOptions` allocated per call.
-
-Two things this does not touch. A body that is a primitive or a collection of them (`string`, `List<int>` —
-what `Query.PostJsonAsync` carries today) has no property names at all. And a `JsonObject` / `JsonArray`
-body, which is how the DiGi update endpoints take their payloads, carries **keys**: those are data rather
-than properties, so no naming policy applies. The exposure is exactly the body *objects* —
-`Building2DReferencesByPagingParameter`, `CountByAdministrativeAreal2DIdsParameter` and their siblings.
-
----
-
-## 3. Client / proxy structure
-
-A UI that fronts a WebAPI is still a DiGi project: the
-[Coding - General.md](Coding%20-%20General.md) architecture applies unchanged. Reference shape:
-`DiGi.GIS.WebAPI.UI`.
-
-- **One base URI constant, never a literal.** `Constants.Default.GISWebAPIUri` (plus a
-  `…Uri_Development` sibling), with every other URL composed from it —
-  `public const string TerrainUri = GISWebAPIUri + "/gis/terrain";`. A literal repeated per call site
-  cannot be repointed at another host.
-- **HTTP plumbing belongs in `/Query`, not in the controller.** `CreateClient` → `GetAsync` →
-  `IsSuccessStatusCode` → `ReadAsStringAsync` → `Core.Convert.ToDiGi<T>` is five lines that must not be
-  copied into every action. One public member per file, extension methods on `HttpClient?`:
+## 3. Client / proxy structure (reference: `DiGi.GIS.WebAPI.UI`)
+The `Coding - General.md` architecture applies unchanged.
+- **One base URI constant**, never a literal: `Constants.Default.GISWebAPIUri` (+ `…Uri_Development`), every URL composed
+  from it (`public const string TerrainUri = GISWebAPIUri + "/gis/terrain";`).
+- **HTTP plumbing lives in `/Query`**, one member per file, extensions on `HttpClient?`, `T : Core.Interfaces.ISerializableObject`:
 
   | Member | Returns |
   |---|---|
   | `JsonAsync(requestUri, cancellationToken)` | raw body, for verbatim relay |
   | `ItemsAsync<T>(requestUri, cancellationToken)` | `List<T>?` via `Core.Convert.ToDiGi<T>` |
   | `ItemAsync<T>(requestUri, cancellationToken)` | the first item |
-  | `PostJsonAsync<T>(requestUri, value, cancellationToken)` | raw body, for body-criteria endpoints |
-
-  `T` is constrained to `Core.Interfaces.ISerializableObject`. The HTTP verb stays in `PostJsonAsync`'s
-  name — the verb is the only thing distinguishing it from its sibling — matching the existing
-  `DiGi.WebAPI.Query.GetAsync` precedent, and this is the recognised exception to the
-  no-verb-prefix rule for `Query`.
-- **Collapse every failure to `null` and let the caller decide.** A page is assembled from several
-  independent requests; one of them failing must leave the rest of the page standing. The controller
-  then maps `null` to `NoContent()`, which the front end already treats as "hide this panel". Do not
-  map an upstream 500 to `BadRequest()` — it blames the caller for a server fault and turns a hidden
-  panel into a console error.
-- **Do not reuse `DiGi.WebAPI.Query.GetAsync<T>` for this.** It throws on any non-2xx status and takes
-  no `CancellationToken` (it derives one from `PostOptions.Delay`), so it fits a background task, not a
-  page that must degrade.
-- **`CancellationToken` on every action that issues an outbound request**, last parameter (CA1068),
-  threaded all the way through. Without it a browser that navigates away leaves the outbound request
-  running to completion.
-- **Three timeouts govern a request through `GISWebAPIManager`, and the smallest one wins.** Size a batch
-  against the client's effective budget, not against the server's:
+  | `PostJsonAsync<T>(requestUri, value, cancellationToken)` | raw body, for body-criteria endpoints (the verb stays in the name — the recognised exception to property-like `Query` names) |
+  | `…ResponseAsync` siblings (`Query.Building2DReferenceResponseAsync`) | body **plus the upstream status**, for actions that must report it |
+- **A failure never reads as empty or absent.** A page assembled from independent requests still degrades panel by
+  panel, but each failing request is named by its own status: no upstream answer (unreachable, timeout) → **503**; an
+  upstream fault answered → **502**; an upstream 404 → 404, other answered statuses mirrored; a known scope with no rows →
+  200 with an empty list (or 204 where the panel contract hides on it); a bad caller value → 400; never map an upstream
+  failure to `BadRequest()` or to the empty scope's 204. Collapsing every failure to `null` made an outage read as
+  "Building not found" (`DiGi.GIS.WebAPI.UI#40`, `#48`); use the status-preserving `…ResponseAsync` sibling where the
+  status matters, and keep the `null`-collapsing helpers for decoration rendered as *unknown* (`Coding - WPF Deferred Loading.md` §4).
+- **Do not reuse `DiGi.WebAPI.Query.GetAsync<T>` for pages** — it throws on any non-2xx and takes no token (it derives one
+  from `PostOptions.Delay`); it fits background tasks.
+- **`CancellationToken` on every action issuing an outbound request**, last, threaded through — otherwise a navigation
+  away leaves the request running. Rethrow only a requested cancellation (`Coding - General.md` §1.22).
+- **Three timeouts govern a `GISWebAPIManager` request; the smallest wins:**
 
   | Layer | Default | Where |
   |---|---|---|
-  | `PostOptions.Delay` — bounds **each attempt** | 20 s | `DiGi.WebAPI/Classes/Options/PostOptions.cs` |
-  | `HttpClient.Timeout` — hard ceiling on every request | 600 s | `DiGi.GIS.WebAPI/Create/ServiceProvider.cs` |
-  | `commandtimeout` — the server's database budget | 600 s | e.g. `BuildingDataController` |
+  | `PostOptions.Delay` — each attempt | 20 s | `DiGi.WebAPI/Classes/Options/PostOptions.cs` |
+  | `HttpClient.Timeout` — every request | 600 s | `DiGi.GIS.WebAPI/Create/ServiceProvider.cs` |
+  | `commandtimeout` — server database budget | 600 s | e.g. `BuildingDataController` |
 
-  A bulk write left on default `PostOptions` is cut off **by the client** at 20 s on an endpoint sized for
-  600 s. The cancellation surfaces as an `OperationCanceledException` that `UpdateItemsAsync` rethrows, so a
-  caller's `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)` does
-  **not** match it and the failure reads as an unexplained item error. `RetryCount` is 3, so a slow request
-  burns four times the delay before failing; retrying is safe because the writes conflict on their key.
-  - **Keep the `HttpClient` ceiling at or above the server's `commandtimeout`.** It was 60 s until
-    DiGi.GIS.YOLO.UI#14 and silently cancelled slow global reads the server would have answered; raising
-    `Delay` past the ceiling does nothing. Any new named client follows the same rule.
-  - Measured read side: `tablebybuildingdatabyreferencesparameter` with 10 000 references and every column
-    answered in 5.6 s / 33 MB.
-
----
+  A bulk write on default `PostOptions` is cut **by the client** at 20 s on an endpoint sized for 600 s; the
+  `OperationCanceledException` that `UpdateItemsAsync` rethrows does not match a caller's
+  `when (cancellationToken.IsCancellationRequested)` filter and reads as an unexplained item error. `RetryCount` 3 → four
+  delays before failing (safe: writes conflict on their key). **Keep `HttpClient.Timeout` ≥ the server `commandtimeout`**
+  (it was 60 s until DiGi.GIS.YOLO.UI#14 and silently cancelled slow reads; raising `Delay` past it does nothing). Measured:
+  `tablebybuildingdatabyreferencesparameter`, 10 000 references, every column — 5.6 s / 33 MB.
 
 ## 4. Do not build on an endpoint that is not deployed yet
+Check what runs: `GET /information/controllers` (`InformationalVersion` with commit hash, compare with `git log`) and
+`GET /information/endpoints?includeignored=true` (exact route, verb, parameter names). A client that must ship first gates
+the call with a `TODO [MarkerName]` (`Coding - General.md` §1.12) whose removal condition is observable ("once
+`/information/controllers` reports a build carrying `idsbycode`").
 
-The deployed host lags the repository, so an endpoint that exists in source may still answer **404**.
-Check what is actually running before writing a client against it:
+**A live probe verifies the response, not the request.** Authentication and validation paths answer one status for every
+cause (`POST /user/login` → 401 for an unknown email, no credential, a wrong password, wrong property names, or no body).
+Where the failure status is uniform, **record the request**: point the base URI constant at a local stub for the test and
+assert the exact bytes and headers (that found the camelCase body of §2 and a relay clearing the session cookie on 401,
+which made refresh-and-retry impossible). Stub traps: `HttpClient` sends `JsonContent` **chunked** (a stub reading
+`Content-Length` records an empty body); revert the URI, rebuild and grep the stub host across
+`--include=*.cs --include=*.cshtml --include=*.js` before committing.
 
-```bash
-# Check deployed controller builds and commit hashes
-curl -s "https://api.digiproject.uk/information/controllers"
-
-# Check exact active routes and parameter names (including unlisted endpoints)
-curl -s "https://api.digiproject.uk/information/endpoints?includeignored=true"
-```
-
-`InformationalVersion` carries the commit hash. Compare it with `git log` for the controller you need.
-Querying `/information/endpoints` confirms whether the specific action route, HTTP verb, and query parameter names match what your client expects.
-
-When a client must ship before the endpoint does, gate the call and mark it with a grep-able
-`TODO [MarkerName]` per the temporary-code rule in
-[Coding - General.md](Coding%20-%20General.md) §1, stating the **observable** removal condition —
-"once `GET /information/controllers` reports a build carrying `idsbycode`" — not merely that the code
-is temporary.
-
-### A live probe verifies the response, not the request
-
-Querying the deployed host proves an endpoint is there. It does not prove the client is sending what you
-think, and on an authentication or validation path it usually *cannot*: those answer the same status for
-every cause. `POST /user/login` returns **401** for an unknown email, for an account with no stored
-credential, for a wrong password — and equally for a correct password sent under the wrong property names,
-or for no body at all. A probe against a deliberately failing credential therefore says nothing whatever
-about the request.
-
-Where the failure status is uniform, **record the request instead of reading the response.** Stand up a
-local stub of the service, point the client's base URI constant at it for the length of the test, and assert
-the exact bytes and headers that arrive. Two defects were found that way in the login relay, neither of them
-reachable by a live probe: the camelCase renaming in §2, and a relay that cleared the session cookie on a
-401 — destroying the token that refresh then had to present, so refresh-and-retry could never succeed.
-
-Two traps in the stub itself:
-
-- `HttpClient` sends `JsonContent` **chunked**, its length not being known up front. A stub that reads
-  `Content-Length` records an empty body and invents a defect that is not there.
-- Revert the base URI and rebuild before committing, then `grep` the stub's host across
-  `--include=*.cs --include=*.cshtml --include=*.js`. If the pointer has to outlive the test, it is
-  temporary code and takes a `TODO [MarkerName]` per the rule above.
-
----
-
-## 5. Controller side — activation, response shape, error negotiation
-
-Three controller defects that build clean, pass every Fact that `new`s the controller, and break the
-deployed endpoint.
-
-- **A controller has exactly one public constructor.** The hosts call plain `AddControllers()`, so MVC
-  activates through `ActivatorUtilities.CreateFactory(type, Type.EmptyTypes)`; with no argument types every
-  public constructor matches, and a second one throws *"Multiple constructors accepting all given argument
-  types have been found"* — on every request, for **every** action of that controller, as HTTP 500. A
-  short "convenience" constructor added for tests took down all of `gis/building2d` for a day
-  (DiGi.GIS.WebAPI#6). Pass the extra dependencies explicitly in the test instead.
-  - **Diagnose in one call:** probe an action whose first statement is a parameter guard
-    (`?id=0` where the guard is `id <= 0`). **500 instead of 400** means the failure precedes the action
-    body — activation, not SQL.
-  - **Guard it:** `DiGi.Test/DiGi.GIS.WebAPI.xUnit/Facts/ControllerActivation.cs` reflects over every
-    `WebAPIController` and builds the real `ActivatorUtilities` factory, without a database. Copy it into
-    the test project of any other WebAPI that gains controllers.
-- **Return a DiGi object as `Content(Core.Convert.ToSystem_String(x), "application/json")`, never `Ok(x)`.**
-  `Ok` hands the object to the host's MVC formatter, which writes camelCase names and no `_type`
-  discriminator (`{"id":…,"countyId":…}` instead of `{"_type":"…","CountyId":…}`). A DiGi client's
-  `Core.Convert.ToDiGi<T>` then returns `null` — the UI reported "Nothing left to verify" while the API log
-  showed a successful draw (DiGi.GIS.WebAPI#39). A unit test cannot reproduce it, because plain STJ keeps the
-  `[JsonPropertyName]` names; only a live body shows the host's shape. `Ok(...)` is for MVC POCOs
-  (`ProblemDetails`, plain result records), which is what `Coding - Deployed WebAPI.md` §1 documents them as.
-- **Do not put `[Produces("image/jpeg")]` on an action that can also return a string error.** Content
-  negotiation then finds no formatter for the string-bodied 400/500/503 `ObjectResult` and answers **406**,
-  masking the real error, while `File()` and `NotFound()` bypass negotiation and look fine. Declare the
-  content type on the success response only:
-  `[ProducesResponseType(typeof(FileContentResult), 200, "image/jpeg")]`. When an action answers a uniform
-  406, suspect a masked error path first.
-
----
+## 5. Controller side — shape, activation, responses
+- **Extension entry point:** each `DiGi.*.WebAPI` exposes `public static async Task InitializeAsync(this IServiceCollection serviceCollection)`
+  in `Modify/InitializeAsync.cs`, registering its dependencies as concrete-type singletons. The host finds it by
+  reflection (a type named `Modify`, a public static `Initialize`/`InitializeAsync` taking exactly one
+  `IServiceCollection`); anything else is skipped with only "Method initialization skipped" logged, the dependencies are
+  missing, and every action answers 500.
+- **Controller shape:** `[ApiController] [Route("<prefix>/[controller]")] public class XController : WebAPIController`;
+  actions `Task<IActionResult> XxxAsync(…, CancellationToken cancellationToken = default)` with a lower-case concatenated
+  route and a unique name: `[HttpGet("itemsbycountyid", Name = $"{nameof(XController)}_{nameof(XxxAsync)}")]` (duplicate
+  names fail at start-up). GIS controllers carry `[TransientDatabaseFailure]`: a transient `NpgsqlException` →
+  **503 + `Retry-After: 30`** (DiGi.GIS.WebAPI#71); a general catch logs and answers 500.
+- **Exactly one public constructor.** Hosts call plain `AddControllers()`, so MVC activates through
+  `ActivatorUtilities.CreateFactory(type, Type.EmptyTypes)`; a second public constructor throws "Multiple constructors
+  accepting all given argument types" on **every** action as 500 (a test convenience constructor took down
+  `gis/building2d` for a day, DiGi.GIS.WebAPI#6). Diagnose: a parameter-guard probe (`?id=0`) answering **500 instead of
+  400** fails before the body. Guard: copy `DiGi.Test/DiGi.GIS.WebAPI.xUnit/Facts/ControllerActivation.cs` (builds the real
+  factory for every `WebAPIController`, no database).
+- **Return a DiGi object as `Content(Core.Convert.ToSystem_String(x), "application/json")`, never `Ok(x)`** — the MVC
+  formatter writes camelCase without `_type`, and the client's `Core.Convert.ToDiGi<T>` returns `null` ("Nothing left to
+  verify" while the API logged a successful draw, DiGi.GIS.WebAPI#39). Unit tests cannot see it (plain STJ keeps
+  `[JsonPropertyName]`); only a live body can. `Ok(...)` is for MVC POCOs (`ProblemDetails`, plain records).
+- **No action-level `[Produces("image/jpeg")]` over string-bodied error paths:** negotiation finds no formatter for the
+  string 400/500/503 and answers **406**, masking the error (`File()`/`NotFound()` bypass it). Declare the type on the
+  success response only: `[ProducesResponseType(typeof(FileContentResult), 200, "image/jpeg")]`. A uniform 406 → suspect a
+  masked error path.
 
 ## 6. Checklist
-
 **Changing a controller**
-- [ ] Renamed or removed a `[FromQuery(Name = "…")]`? Grep every client and the front-end query strings.
-- [ ] Non-nullable parameter whose absence matters? Make it nullable and reject `null`.
-- [ ] Enum guard compared against a sentinel that is not `0`? It does not cover the omitted case.
-- [ ] `CancellationToken` last, and actually passed to the converter/query beneath.
-- [ ] Exactly one public constructor; `ControllerActivation` fact present in the test project.
-- [ ] DiGi objects returned via `Content(Core.Convert.ToSystem_String(x), "application/json")`, not `Ok(x)`.
-- [ ] No action-level `[Produces(...)]` on an action with string-bodied error paths.
+- [ ] Renamed/removed a `[FromQuery(Name = "…")]`? Every client and front-end query string grepped.
+- [ ] Absence matters? Nullable binding, `null` rejected; no guard against a non-`0` sentinel.
+- [ ] `CancellationToken` last and passed to the converter beneath.
+- [ ] `Modify.InitializeAsync(this IServiceCollection)` present; route names unique; one public constructor;
+      `ControllerActivation` fact present.
+- [ ] DiGi objects via `Content(Core.Convert.ToSystem_String(x), "application/json")`; failures answer 503/502/500, not
+      empty; no action-level `[Produces]` over string errors.
 
 **Writing a client**
-- [ ] Base URI from a constant; no literal host anywhere else.
-- [ ] Request/deserialize through the `/Query` helpers, not inline in the action.
-- [ ] Enum values sent as integers.
-- [ ] JSON body serialized with `JsonSerializerOptions.Default` when the contract names the properties.
-- [ ] Body property names confirmed on the wire, not inferred from a uniform failure status.
-- [ ] Absence degrades (`NoContent`), it does not fail the page.
-- [ ] `PostOptions.Delay` sized for the batch (default 20 s per attempt); `HttpClient.Timeout` ≥ server `commandtimeout`.
-- [ ] Every endpoint used is present on the deployed host, or gated behind a `TODO [MarkerName]`.
+- [ ] Base URI from a constant; `/Query` helpers; enums as integers; `JsonSerializerOptions.Default` for named bodies;
+      body names confirmed on the wire.
+- [ ] Each panel degrades on its own, and an upstream failure is reported by its status, never as empty or 404.
+- [ ] `PostOptions.Delay` sized for the batch; `HttpClient.Timeout` ≥ server `commandtimeout`.
+- [ ] Every endpoint used is deployed, or gated behind a `TODO [MarkerName]`.

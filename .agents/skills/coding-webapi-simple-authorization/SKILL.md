@@ -1,53 +1,29 @@
 ---
 name: coding-webapi-simple-authorization
-description: "Use when implementing or auditing lightweight API-key-based tiered authorization for WebAPI controllers - deny-by-default IsAuthorized, [Feature]Configuration model with an Open escape hatch, files/*.conf vs user files/ secrets, [FromHeader(Name = \"key\")] binding, constant-time key comparison, singleton registration on the host, MSBuild copy targets, Deploy.ps1 deployment synchronization, and what a .NET 7+ WebApplication actually inserts into the pipeline (authentication/authorization middleware added automatically; [Authorize] without a registered scheme answers 500, not 401; GetService<...>() != null gates are vacuous)."
+description: "Use when implementing or auditing API-key tiered authorization on a WebAPI - deny by default, [Feature]Configuration with an Open escape hatch, fail-closed factory, constant-time IsAuthorized, the key in a request header, singleton registration, a second gate indistinguishable from the first, what a .NET 7+ WebApplication inserts ([Authorize] without a scheme answers 500), committed defaults vs secrets, deny-branch facts."
 ---
 
-# Coding — WebAPI Simple Authorization (Tiered Access & API Key Protection)
+# Coding — WebAPI Simple Authorization (Tiered Access & API Key)
 
-Guidelines for implementing lightweight, API-key-based tiered authorization across DiGi WebAPI microservices, controllers, and diagnostic/administrative endpoints.
+Lightweight API-key tiers for WebAPI controllers and diagnostic/administrative endpoints, configured by a local `.conf`
+instead of an OAuth2/JWT provider.
 
 > [!CAUTION]
-> **Deny by default.** Every branch that is not an exact key match must return HTTP 401 — a missing configuration file, an unreadable one, `Enabled=false`, a blank configured key, a blank supplied key. The first version of this pattern returned "authorized" whenever enforcement was not configured, and the result was that `api.digiproject.uk` served host telemetry, the full loaded-assembly inventory and the complete internal route catalog to anonymous callers, with a valid key sitting unused in the configuration file and a green 28-test suite. A protection that opens when it is unsure is not a protection.
+> **Deny by default.** Every branch that is not an exact key match returns **401**: a missing or unreadable configuration,
+> `Enabled=false`, a blank configured key, a blank supplied key. The first version returned "authorized" when enforcement
+> was not configured, and `api.digiproject.uk` served host telemetry, the assembly inventory and the internal route catalog
+> to anonymous callers — with a valid key unused in the conf and a green 28-test suite.
 
----
+## 1. Tiers
+- **Public:** health/readiness (`GET /information/health`), coarse version (`/information/version` without commit hashes),
+  the route catalog the API explorer already publishes (`/information/endpoints`), ordinary unauthenticated reads.
+- **Protected (`key` header):** host telemetry (`/information/system`), assembly inventory (`/information/assemblies`),
+  controller inventory (`/information/controllers`), hidden/write route catalogs (`/endpoints?includeignored=true`), commit
+  hashes on public responses (§6), administrative and maintenance actions.
 
-## 1. Overview & Tiered Access Model
-
-To protect sensitive operational telemetry, internal routing catalogs, and maintenance actions without the operational overhead of a full OAuth2/JWT identity provider, DiGi WebAPI endpoints employ a **Simple Tiered Authorization Pattern** governed by a local `.conf` configuration file.
-
-```mermaid
-graph TD
-    Request[Incoming HTTP Request] --> CheckAuth{Is Endpoint Protected?}
-    CheckAuth -- No (Health, public Version, public Reads) --> Execute[Process Request & Return HTTP 200]
-    CheckAuth -- Yes (System, Assemblies, Controllers, Ignored Routes, Writes) --> ValidateKey{Enabled = true AND<br/>configured key non-blank AND<br/>'key' header matches exactly?}
-    ValidateKey -- Yes --> Execute
-    ValidateKey -- No / unconfigured / unreadable / blank --> Reject[Return HTTP 401 Unauthorized]
-```
-
-### Access Tier Matrix
-- **Public Tier (Open / No Key Required)**:
-  - Public liveness, readiness, and uptime probes (e.g. `GET /information/health`).
-  - Coarse version and runtime information (e.g. `GET /information/version` — assembly versions and framework description).
-  - Public route catalogs (e.g. `GET /information/endpoints` restricted to routes the API explorer already publishes).
-  - Standard unauthenticated read paths.
-- **Protected Tier (Guarded by the `key` header)**:
-  - Detailed host telemetry, GC heap allocations, thread pool loads (e.g. `GET /information/system`).
-  - Dynamic assembly and plugin inspections (e.g. `GET /information/assemblies`).
-  - Deployed controller inventories with route prefixes (e.g. `GET /information/controllers`).
-  - Hidden internal and write endpoint catalogs (e.g. `GET /information/endpoints?includeignored=true`).
-  - Source control commit hashes on otherwise public responses — see §6.
-  - Administrative and internal maintenance actions.
-
----
-
-## 2. Architecture & DiGi.Core Pattern
-
-Follow the standard DiGi.Core separation of data models and extension methods.
-
-### A. Data Model (`/Classes/[Feature]Configuration.cs`)
-Anemic serializable model holding authorization settings. Three members: the key, whether enforcement is configured, and the single explicit escape hatch.
-
+## 2. Pattern (`DiGi.WebAPI`: `Classes/DiagnosticsConfiguration.cs`, `Query/IsAuthorized.cs`)
+**Model** — a serializable `[Feature]Configuration` with three members: the key, whether enforcement is configured, and
+the one escape hatch (standard three constructors, `Coding - Serialization.md` §3):
 ```csharp
 public class DiagnosticsConfiguration : SerializableObject, IWebAPISerializableObject
 {
@@ -60,67 +36,26 @@ public class DiagnosticsConfiguration : SerializableObject, IWebAPISerializableO
     [JsonInclude, JsonPropertyName(nameof(Open))]
     private readonly bool open;
 
-    // The parameterless form must deny every protected request - it is what an unconfigured host gets.
+    // The parameterless form denies every protected request - it is what an unconfigured host gets.
     public DiagnosticsConfiguration(string? key = null, bool enabled = false, bool open = false)
-        : base()
     {
         this.key = key;
         this.enabled = enabled;
         this.open = open;
     }
-
-    // Copy and JSON constructors per the standard three-constructor pattern.
 }
 ```
+`Open` keeps local development usable: the **only** setting granting unauthenticated protected access, never set on a
+deployed host, logged as a warning when honoured. File name constant: `Constants.FileName.WebAPI_Diagnostics =
+"WebAPI_Diagnostics.conf"`.
 
-`Open` exists so local development is not bricked by deny-by-default. It is the **only** setting that grants unauthenticated access to the protected tier, it is never set on a deployed host, and honouring it logs a warning.
+**Factory** (`/Create/DiagnosticsConfiguration.cs`) — probe the explicit path, the base directory, the current directory;
+read `Key`, `Enabled` (default: key non-blank), `Open` (default `false`) with `ConfigurationFile.GetValue<T>`; then the
+`DIGI_DIAGNOSTICS_KEY` environment variable; **finally fail closed**: `new DiagnosticsConfiguration(null, enabled: true)`.
+Probe only paths the build produces (`CopyFiles`/`CopyUserFiles` flatten into the output root — `bin/user files/` never
+exists). Log a Warning on every path ending in an unusable configuration.
 
-### B. Standard Constant (`/Constants/FileName.cs`)
-```csharp
-public static class FileName
-{
-    public const string WebAPI_Diagnostics = "WebAPI_Diagnostics.conf";
-}
-```
-
-### C. Factory Method (`/Create/[Feature]Configuration.cs`)
-Probe for the file, then **fail closed** — the final fallback carries no key and therefore authorizes nothing:
-
-```csharp
-public static DiagnosticsConfiguration DiagnosticsConfiguration(string? path = null)
-{
-    // ... resolve path from the explicit argument, the base directory, then the current directory ...
-
-    if (!string.IsNullOrWhiteSpace(resolvedPath) && System.IO.File.Exists(resolvedPath))
-    {
-        ConfigurationFile configurationFile = new();
-        if (configurationFile.Read(resolvedPath))
-        {
-            string? key = configurationFile.GetValue<string>(nameof(Classes.DiagnosticsConfiguration.Key));
-            bool enabled = configurationFile.GetValue<bool>(nameof(Classes.DiagnosticsConfiguration.Enabled), defaultValue: !string.IsNullOrWhiteSpace(key));
-            bool open = configurationFile.GetValue<bool>(nameof(Classes.DiagnosticsConfiguration.Open), defaultValue: false);
-
-            // Log a warning for Open=true and for a configuration that cannot authorize anyone.
-            return new DiagnosticsConfiguration(key, enabled, open);
-        }
-    }
-
-    string? envKey = Environment.GetEnvironmentVariable("DIGI_DIAGNOSTICS_KEY");
-    if (!string.IsNullOrWhiteSpace(envKey))
-    {
-        return new DiagnosticsConfiguration(envKey, enabled: true);
-    }
-
-    // No configuration found: enforcement on, no key -> the protected tier answers 401.
-    return new DiagnosticsConfiguration(null, enabled: true);
-}
-```
-
-Probe only paths that the build actually produces. `CopyFiles` and `CopyUserFiles` both flatten into the output root, so `bin/user files/` never exists — probing it is dead code that reads as a working fallback.
-
-Log at `Warning` on every path that ends with an unusable configuration. A silently open or silently closed diagnostics surface is how this defect survived a full test suite and a live deployment.
-
-### D. Authorization Query Extension (`/Query/IsAuthorized.cs`)
+**Check** (`/Query/IsAuthorized.cs`):
 ```csharp
 public static bool IsAuthorized(this DiagnosticsConfiguration? diagnosticsConfiguration, string? key)
 {
@@ -140,39 +75,27 @@ public static bool IsAuthorized(this DiagnosticsConfiguration? diagnosticsConfig
     }
 
     string? key_Configured = diagnosticsConfiguration.Key;
-
     if (string.IsNullOrWhiteSpace(key_Configured) || string.IsNullOrWhiteSpace(key))
     {
         return false;
     }
 
-    byte[] bytes_Configured = Encoding.UTF8.GetBytes(key_Configured);
-    byte[] bytes_Provided = Encoding.UTF8.GetBytes(key);
-
-    return CryptographicOperations.FixedTimeEquals(bytes_Configured, bytes_Provided);
+    return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(key_Configured), Encoding.UTF8.GetBytes(key));
 }
 ```
+- **`Enabled == false` means "no key check configured", never "let everyone in"** — reading it the other way shipped the
+  endpoints open.
+- **Constant-time comparison:** `string.Equals` exits on the first differing byte and leaks the matching prefix length.
 
-Two rules this encodes:
-- **`Enabled == false` means "no key check is configured", not "let everyone in".** Reading it the other way is what shipped the endpoints open.
-- **Compare in constant time.** `string.Equals` returns on the first differing byte and leaks the length of the matching prefix. `CryptographicOperations.FixedTimeEquals` also handles the length mismatch without an early return.
-
----
-
-## 3. Controller Implementation Pattern
-
-1. **Constructor injection with a factory fallback**, and register the configuration **once** on the host — a controller is activated per request, so a constructor that loads the file performs disk I/O on every call, including unauthenticated public ones:
-   ```csharp
-   // Host: DiGi.WebAPI.WindowsService/Program.cs, before AddControllers()
-   serviceCollection.AddSingleton(WebAPI.Create.DiagnosticsConfiguration());
-   ```
-   ```csharp
-   public InformationController(DiagnosticsConfiguration? diagnosticsConfiguration = null)
-   {
-       this.diagnosticsConfiguration = diagnosticsConfiguration ?? Create.DiagnosticsConfiguration();
-   }
-   ```
-2. **Bind the key from the request header, never the query string:**
+## 3. Controller
+1. **Register the configuration once on the host** (`DiGi.WebAPI.WindowsService/Program.cs`, before `AddControllers()`):
+   `serviceCollection.AddSingleton(WebAPI.Create.DiagnosticsConfiguration());` — a controller is activated per request,
+   so loading the file in its constructor is disk I/O on every call. The constructor falls back:
+   `this.diagnosticsConfiguration = diagnosticsConfiguration ?? Create.DiagnosticsConfiguration();` (still exactly one
+   public constructor, `Coding - WebAPI Contracts.md` §5).
+2. **Bind the key from a header, never the query string** (query strings land in Kestrel/IIS logs, `Referer`, browser and
+   shell history, the plaintext leg of an HTTPS redirect); `[FromHeader]` keeps it in Swagger and header names are
+   case-insensitive:
    ```csharp
    [HttpGet("system")]
    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -182,69 +105,44 @@ Two rules this encodes:
        {
            return Unauthorized();
        }
-
        // ...
    }
    ```
-   A query string is written to Kestrel and IIS access logs, to `Referer` headers, to browser history, to shell history, and to the plaintext first leg of a `UseHttpsRedirection` 307. A header is not. Use `[FromHeader]` rather than reading `Request.Headers` directly so the parameter still appears in Swagger. HTTP header names are case-insensitive, and `RouteOptions.LowercaseQueryStrings` does not apply to them.
-3. **Keep `CancellationToken` last (CA1068)** — insert the key parameter before it.
-4. **Response protocol**: unauthorized → **`HTTP 401 Unauthorized`** (`return Unauthorized();`); authorized → **`HTTP 200 OK`** with the JSON payload.
-5. **A second gate on the same action is indistinguishable from the first.** Write endpoints commonly check the key *and* a per-dataset feature flag, and both `return Unauthorized()`. On the wire they are one 401 with no body, so a caller cannot tell "your key is wrong" from "this dataset is not writable here" — and will spend the time on the wrong one.
-   - **An absent flag denies.** `ConfigurationFile.GetValue<bool>(nameof(AllowUpdateX))` with **no `defaultValue`** returns `false` when the key is missing, so a conf written before the flag existed rejects every write and **no key can fix it**. That is correct deny-by-default behaviour and must not be "fixed" by defaulting to `true`; the deployment is what needs updating.
-   - **Ship every flag in the committed default** (`files/WebAPI_[Feature].conf`) so a diff against a deployed conf shows what it is missing. A flag added to the code but not to the committed default leaves every existing host silently denying.
-   - **Log the two cases differently** even though the response is identical — the server log is the only place the distinction survives.
-   - **Worked example.** `BuildingDataController.UpdateItemsByCountyIdsAsync` returns `Unauthorized()` from the key check and again from `if (!GISWebAPIConfigurationFileWatcher.AllowUpdateBuildingData)`. A deployed `GIS_WebAPI.conf` predating that flag produced 401s that survived two key rotations and two full pipeline runs before the second gate was found.
-6. **The key gate is a plain action check, not `[Authorize]` — and the host's middleware does not behave the way `Program.cs` suggests.** Read this before acting on an issue that blames the pipeline:
-   - **A .NET 7+ `WebApplication` inserts the authentication and authorization middleware itself.** `WebApplicationBuilder` adds `AuthenticationMiddleware`/`AuthorizationMiddleware` at pipeline start whenever `IAuthenticationSchemeProvider`/`IAuthorizationHandlerProvider` is registered and the app has not called the `Use*` method explicitly. `DiGi.WebAPI.WindowsService/Program.cs` never calls `UseAuthentication()`, and login-issued tokens on `user/session` still answer 200 — the claim "`[Authorize]` 401s because the host never calls `UseAuthentication()`" is wrong on this host (`DiGi.WebAPI.WindowsService#1`, closed not planned). The direct observable is `((IApplicationBuilder)webApplication).Properties["__AuthenticationMiddlewareSet"]`, set during `StartAsync`.
-   - **`GetService<…>() != null` around `UseAuthorization()` is a vacuous gate.** `AddControllers()` always registers `IAuthorizationService`, and `IAuthenticationSchemeProvider` resolves even when no extension called `AddAuthentication()`. A gate that means something: `await schemeProvider.GetDefaultAuthenticateSchemeAsync() != null`.
-   - **Without a registered scheme, `[Authorize]` answers 500, not 401** (`InvalidOperationException: No authenticationScheme was specified, and there was no DefaultChallengeScheme found`), with or without `UseAuthentication()`. That is why `DiGi.GIS.WebAPI` validates the user JWT inside the action: the host may run without the user extension, and the endpoint must still answer 401.
-   - Reproduce any pipeline claim with a `TestServer` mirror of the host pipeline or the real executable before touching `Program.cs`.
+   The key parameter goes before the token (CA1068). Unauthorized → 401; authorized → 200 with the payload.
+3. **A second gate on the same action is indistinguishable from the first.** Write endpoints check the key **and** a
+   per-dataset flag, both `return Unauthorized()` — one bodyless 401 on the wire.
+   - **An absent flag denies:** `ConfigurationFile.GetValue<bool>(nameof(AllowUpdateX))` without `defaultValue` is
+     `false`, so a conf predating the flag rejects every write and no key fixes it — correct; update the deployment, never
+     default the flag to `true`.
+   - **Ship every flag in the committed default** (`files/WebAPI_[Feature].conf`) so a diff against a deployed conf shows
+     what is missing; **log the two denials differently** (the log is the only place they differ).
+   - `BuildingDataController.UpdateItemsByCountyIdsAsync` (key check, then `GISWebAPIConfigurationFileWatcher.AllowUpdateBuildingData`):
+     a deployed `GIS_WebAPI.conf` without the flag survived two key rotations and two pipeline runs.
+4. **The key gate is a plain action check, not `[Authorize]` — and the pipeline is not what `Program.cs` suggests:**
+   - A .NET 7+ `WebApplication` inserts `AuthenticationMiddleware`/`AuthorizationMiddleware` itself when their services are
+     registered and `Use*` was not called — `Program.cs` never calls `UseAuthentication()`, yet `user/session` tokens
+     answer 200 (`DiGi.WebAPI.WindowsService#1`, closed not planned). Observable:
+     `((IApplicationBuilder)webApplication).Properties["__AuthenticationMiddlewareSet"]` after `StartAsync`.
+   - `GetService<…>() != null` around `UseAuthorization()` is vacuous (`AddControllers()` registers
+     `IAuthorizationService`; `IAuthenticationSchemeProvider` always resolves). A real gate:
+     `await schemeProvider.GetDefaultAuthenticateSchemeAsync() != null`.
+   - Without a registered scheme `[Authorize]` answers **500**, not 401 (`No authenticationScheme was specified…`) — why
+     `DiGi.GIS.WebAPI` validates the user JWT inside the action (the host may run without the user extension).
+   - Reproduce any pipeline claim with a `TestServer` mirror or the real executable before touching `Program.cs`.
 
----
+## 4. Configuration files and deployment
+- **Committed default** `files/WebAPI_[Feature].conf` ships deny-by-default (`Enabled=false`, `Key=""`); the **secret**
+  lives in `user files/WebAPI_[Feature].conf`, which overrides it in `bin` (copy targets and `.gitignore`:
+  `Coding - General.md` §3).
+- `Deploy.ps1` syncs extensions into `DiGi.WebAPI.WindowsService\bin\extensions\*`, then that `bin` to
+  `SOFTWARE_DIRECTORY\DiGi.WebAPI.WindowsService`. `SyncDirectory.ps1` keeps top-level `*.conf` that exist only on the
+  target, but a conf the source carries **overwrites** it — the deployed secret then travels from a workstation. Prefer the
+  production key on the server (or `DIGI_DIAGNOSTICS_KEY`), out of the build output.
 
-## 4. Alignment with Build & Deployment Process
-
-### A. Committed Default (`files/`) vs Secrets (`user files/`)
-- **Committed default — `files/WebAPI_[Feature].conf`.** Ships deny-by-default values (`Enabled=false`, `Key=""`). Deployed to `bin/` by the `CopyFiles` target.
-- **Runtime secret — `user files/WebAPI_[Feature].conf`.** Never committed. `CopyUserFiles` runs `AfterTargets="CopyFiles"`, guaranteeing that `user files/*.conf` always overwrites `files/*.conf` in `bin/`.
-
-### B. `.gitignore` Enforcement
-```gitignore
-[Uu]ser [Ff]iles/
-```
-Verify with `git check-ignore -v "user files/WebAPI_Diagnostics.conf"`.
-
-### C. MSBuild Output Target (`.csproj`)
-```xml
-<Target Name="CopyFiles" AfterTargets="Build">
-  <ItemGroup>
-    <_Files Include="$(ProjectDir)..\files\**\*.*" />
-  </ItemGroup>
-  <Copy SourceFiles="@(_Files)" DestinationFiles="@(_Files->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-</Target>
-
-<Target Name="CopyUserFiles" AfterTargets="CopyFiles">
-  <ItemGroup>
-    <_UserFiles Include="$(ProjectDir)..\user files\**\*.*" />
-  </ItemGroup>
-  <Copy SourceFiles="@(_UserFiles)" DestinationFiles="@(_UserFiles->'$(OutputPath)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
-</Target>
-```
-
-### D. Deployment Synchronization (`Deploy.ps1`)
-1. **Phase 1** — microservice assemblies to `DiGi.WebAPI.WindowsService\bin\extensions\*`.
-2. **Phase 2** — `DiGi.WebAPI.WindowsService\bin` to `SOFTWARE_DIRECTORY\DiGi.WebAPI.WindowsService`.
-
-`SyncDirectory.ps1` clears the destination before copying, and excludes top-level `*.conf` from that wipe so configuration that exists only on the target machine survives a deployment. A conf the source also carries is still overwritten — meaning the deployed secret travels from a developer workstation. Prefer placing the production key on the server (or in `DIGI_DIAGNOSTICS_KEY`) and keeping it out of the build output entirely.
-
----
-
-## 5. Automated Tests & Sanitization Standards
-
-> [!IMPORTANT]
-> **Zero Fragile Data Disclosure:** tests must **never** read real on-disk configuration, test machine secrets, or hardcoded environment paths. Write synthetic `.conf` files to `assembly.ReportsDirectory()` when the loader itself needs covering.
-
-1. **Assert the denials, not just the grant.** A test suite that only proves "the right key works" passes while the endpoint is open to everyone. Cover every deny branch:
+## 5. Tests
+Never read real confs or machine secrets; write synthetic `.conf` files to `assembly.ReportsDirectory()` to cover the
+loader.
+1. **Assert every denial, not just the grant:**
    ```csharp
    [Fact]
    public void DiagnosticsConfiguration_Authorization()
@@ -270,18 +168,15 @@ Verify with `git check-ignore -v "user files/WebAPI_Diagnostics.conf"`.
        Assert.True(diagnosticsConfiguration_Open.IsAuthorized(null));
    }
    ```
-2. **Cover the unconfigured controller.** Assert that a controller built with a default-constructed configuration returns `UnauthorizedResult` from every protected action, and `ContentResult` from the public ones.
-3. **Cover the loader.** Write synthetic conf files and assert the outcome through `IsAuthorized`, including the `Enabled=false` + valid-key shape that shipped open.
-4. **Serialization roundtrip** via `Core.xUnit.Query.SerializationCheck(...)`, covering an instance with `Open` set.
-5. **Unit tests are not enough.** They exercise the action method, not model binding. Confirm `[FromHeader]` binds by running the host and probing it — a wrong binding source produces a permanent 401 that no unit test sees.
+2. A default-configured controller returns `UnauthorizedResult` from every protected action, `ContentResult` from public ones.
+3. The loader, including the `Enabled=false` + valid-key shape that shipped open.
+4. `Core.xUnit.Query.SerializationCheck(...)` with `Open` set.
+5. **Probe the running host** — unit tests skip model binding, and a wrong binding source is a permanent 401 no test sees.
 
----
-
-## 6. What Belongs in the Public Tier
-
-Assume the public tier is read by an anonymous attacker doing reconnaissance, and keep it to what a monitoring probe genuinely needs.
-
-- **Commit hashes are protected.** An `AssemblyInformationalVersion` of the form `0.8.8.20260826151608+ec0a8cf…` identifies the exact revision of a **public** GitHub repository. Trim everything from the `+` separator for unauthorized callers and keep the build stamp; return the full value only on a valid key.
-- **Loaded assembly inventories are protected.** Exact versions of every third-party dependency are a CVE-matching shortcut.
-- **Controller and internal route catalogs are protected.** Publishing more than the API explorer already publishes hands over the write surface.
-- **Health and coarse version are public.** They are what an uptime monitor needs and reveal nothing actionable.
+## 6. What the public tier may show
+Assume an anonymous attacker reads it; keep it to what a monitoring probe needs.
+- **Commit hashes are protected:** `0.8.8.20260826151608+ec0a8cf…` names the exact revision of a public repository — trim
+  from `+` for unauthorized callers.
+- **Assembly inventories are protected** (exact third-party versions are a CVE shortcut); **controller/internal route
+  catalogs are protected** (they hand over the write surface).
+- Health and coarse version are public.

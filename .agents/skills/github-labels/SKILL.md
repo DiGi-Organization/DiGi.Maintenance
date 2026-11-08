@@ -1,92 +1,65 @@
 ---
 name: github-labels
-description: "Use when standardizing, applying, or syncing GitHub issue and PR labels across repositories - Type, Priority, Status and AI Complexity taxonomy, requiring Type, Priority and an 'ai: *' tier on every new issue, and updating labels only on open issues by default."
+description: "Use when applying or syncing GitHub labels or choosing an issue's mandatory 'ai: *' tier - the 21-label Type/Priority/Status/AI taxonomy, Type + Priority + one ai tier on every new issue, open issues only by default, the tier criteria and capability bands (err higher for core abstractions), SyncLabelsAllRepos.ps1."
 ---
 
-# AI Guidelines: GitHub Labels
+# AI Guidelines: GitHub Labels & AI Complexity Tier
 
-Guidelines for standardizing, applying, and managing labels on GitHub issues and pull requests across all DiGi repositories.
+## 1. Rules
+1. **Every new issue carries at least one `type: *`, one `priority: *` and exactly one `ai: *` label at creation**, in one
+   `--label` argument (command and default assignee: `GitHub - Issues.md` §1).
+2. Every pull request carries at least one `type: *` label (no `ai: *`).
+3. `status: *` while blocked externally, in progress, awaiting review or parked; remove once resolved.
+4. Only the 21 labels below — no bare/ad-hoc labels (`bug`, `help wanted`, `wontfix`).
+5. Label sweeps and audits touch **open issues only**; closed issues only on explicit user instruction.
 
----
+## 2. Taxonomy
+| Label | Color | Meaning |
+|---|---|---|
+| `type: bug` | `#d73a4a` | Confirmed defect or regression |
+| `type: feature` | `#0e8a16` | Substantial new functionality or public API |
+| `type: enhancement` | `#a2eeef` | Improvement of an existing capability |
+| `type: performance` | `#1d76db` | Speed, allocation or query tuning |
+| `type: refactor` | `#6f42c1` | Structural cleanup, no behavior change |
+| `type: breaking-change` | `#b60205` | Breaking API change (version increment) |
+| `type: documentation` | `#0075ca` | XML docs, AI guidelines, wiki |
+| `type: test` | `#fbca04` | Facts in `DiGi.Test`, benchmarks, fixtures |
+| `type: maintenance` | `#d4c5f9` | CI/CD, dependencies, `.editorconfig`, build scripts |
+| `priority: critical` | `#b60205` | Blocks deployment, corrupts data, outage |
+| `priority: high` | `#d93f0b` | Severe bug or major blocker for the current release |
+| `priority: medium` | `#fb8c00` | Normal cycle |
+| `priority: low` | `#e0e0e0` | Minor, cosmetic, low impact |
+| `status: in-progress` | `#0e8a16` | Active work |
+| `status: blocked` | `#b60205` | Blocked by an upstream dependency (also set the GitHub dependency, `GitHub - Issues.md` §5) |
+| `status: needs-review` | `#fb8c00` | Ready for verification/review |
+| `status: parked` | `#cfd3d7` | Deliberately deferred, not blocked |
+| `ai: light` | `#ffd3eb` | see §3 |
+| `ai: standard` | `#f692ce` | see §3 |
+| `ai: heavy` | `#d03592` | see §3 |
+| `ai: ultra` | `#99286e` | see §3 |
 
-## 1. Taxonomy & Color Standards
+## 3. Choosing the `ai: *` tier
+The tier records how much AI capability the issue needs — a routing decision.
 
-Every DiGi repository adheres to a uniform label taxonomy categorized into **Type**, **Priority**, **Status**, and **AI Complexity**. Standardizing prefixes (`type:`, `priority:`, `status:`, `ai:`) ensures clean organization, auto-complete efficiency in GitHub, and clear visual triage.
+| Tier | Criteria | Capability band | Workspace signals |
+|---|---|---|---|
+| `ai: light` | Typos, docs, comments, boilerplate, an obvious localized fix | Small local model (< 14B) | XML docs, wiki pages, guideline text, a `TODO [Marker]` checklist |
+| `ai: standard` | One method/feature in 1–2 files, unit tests, contained refactoring | Large local model (~31B–70B, workstation GPU) | One `Query`/`Modify`/`Create`/`Convert` member and its `[Fact]` |
+| `ai: heavy` | Multi-layer change (schema + data access + endpoint), concurrency/async deadlocks, cross-cutting concerns (auth, middleware) | Frontier cloud model | A converter + its controller + an HTTP client |
+| `ai: ultra` | Architecture design, migration strategy, deep performance/memory work, heavy domain deduction, undocumented third-party integration | Top extended-reasoning model + human oversight | Geometry/algorithmic correctness, allocation profiling, cross-repository schema or reference-format migrations |
 
-### A. Type Labels (`type: *`) — *What is being changed?*
+Procedure: estimate the files touched and the depth of architectural understanding; **err to the higher tier when core
+abstractions or core business logic change**. The `type:` label is a hint only (`type: documentation` is usually `light`,
+a removal checklist spanning four live markers is not). When asked only to classify, output only the label. Re-tier when
+the scope proves materially different, removing the old tier in the same `gh issue edit`. Each sub-issue is tiered from
+its own scope (`GitHub - Sub-Issues.md`).
 
-| Label | Color | Description |
-| :--- | :--- | :--- |
-| `type: bug` | `#d73a4a` | Confirmed defect or regression in logic, data handling, or output |
-| `type: feature` | `#0e8a16` | Substantial new functionality or public API capability |
-| `type: enhancement` | `#a2eeef` | Improvement, optimization, or refinement of an existing capability |
-| `type: performance` | `#1d76db` | Execution speedup, memory allocation reduction, or query tuning |
-| `type: refactor` | `#6f42c1` | Architectural or structural code cleanup with no behavioral change |
-| `type: breaking-change` | `#b60205` | Breaking API change requiring major/minor version increments |
-| `type: documentation` | `#0075ca` | XML documentation, AI guidelines, or GitHub wiki updates |
-| `type: test` | `#fbca04` | Test facts in `DiGi.Test`, benchmarks, or test fixtures |
-| `type: maintenance` | `#d4c5f9` | CI/CD, project dependencies, `.editorconfig`, or build script updates |
-
-### B. Priority Labels (`priority: *`) — *How critical / urgent is it?*
-
-| Label | Color | Description |
-| :--- | :--- | :--- |
-| `priority: critical` | `#b60205` | Blocks deployment, corrupts data, or causes service outage |
-| `priority: high` | `#d93f0b` | Severe bug or major blocker for current release milestone |
-| `priority: medium` | `#fb8c00` | Normal priority; addressed in standard development cycle |
-| `priority: low` | `#e0e0e0` | Minor inconvenience, cosmetic, or low-impact task |
-
-### C. Status Labels (`status: *`) — *Where is it in the workflow?*
-
-| Label | Color | Description |
-| :--- | :--- | :--- |
-| `status: in-progress` | `#0e8a16` | Active work is underway |
-| `status: blocked` | `#b60205` | Blocked by upstream dependency or external issue |
-| `status: needs-review` | `#fb8c00` | Implementation ready for verification or code review |
-| `status: parked` | `#cfd3d7` | Intentionally deferred or shelved; not actively worked on and not blocked |
-
-### D. AI Complexity Labels (`ai: *`) — *How much AI capability does it need?*
-
-| Label | Color | Description |
-| :--- | :--- | :--- |
-| `ai: light` | `#ffd3eb` | Trivial task: typos, docs, comments, boilerplate, or an obvious localized fix |
-| `ai: standard` | `#f692ce` | Narrow-scope task: a single method or feature in 1-2 files, unit tests, contained refactoring |
-| `ai: heavy` | `#d03592` | Complex task: multi-file refactoring, concurrency debugging, or cross-cutting concerns |
-| `ai: ultra` | `#99286e` | Extreme complexity: architecture design, deep performance work, or heavy domain deduction |
-
-The tier criteria and the decision procedure live in `GitHub - AI Issue Classification.md`.
-
----
-
-## 2. Labeling Rules for Issues & Pull Requests
-
-1. **Mandatory Type, Priority & AI Complexity on Creation:** Every new issue created in any repository **must** have at least one `type: *` label, one `priority: *` label, and exactly one `ai: *` label assigned at creation time (e.g. `type: bug`, `priority: high`, `ai: standard`). See `GitHub - AI Issue Classification.md` for the tier criteria.
-2. **Pull Requests:** Every pull request must have at least one `type: *` label matching the nature of the change.
-3. **Workflow State:** Use `status: *` labels when an issue is blocked by an external component (`status: blocked`), actively pending code review (`status: needs-review`), actively being worked on (`status: in-progress`), or intentionally set aside without an external blocker (`status: parked`). Remove status labels once resolved.
-4. **No Legacy or Ad-hoc Labels:** Avoid creating custom un-prefixed labels (e.g. bare `bug`, `enhancement`, `help wanted`, `wontfix`). All repositories maintain this exact 21-label standard.
-5. **GitHub Label Synchronization Scope:**
-   - **Default Behavior:** Update labels **ONLY on open issues**.
-   - **Exception:** Modify labels on closed issues **ONLY if explicitly instructed by the user**.
-
----
-
-## 3. Synchronization & Automation
-
-The repository label taxonomy is managed and synced across all DiGi repositories using the maintenance script:
-
+## 4. Synchronization
 ```powershell
-# Preview label changes across all repositories
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/SyncLabelsAllRepos.ps1" -DryRun
-
-# Sync labels for a single target repository
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/SyncLabelsAllRepos.ps1" -Repo "DiGi.Core"
-
-# Sync labels across all DiGi repositories
 PowerShell -ExecutionPolicy Bypass -File "DiGi.Maintenance/Scripts/SyncLabelsAllRepos.ps1"
 ```
-
-The script:
-1. Creates missing standard labels with exact names, colors, and descriptions.
-2. Updates existing labels if colors or descriptions differ.
-3. Migrates issues using legacy labels (`bug` -> `type: bug`, `enhancement` -> `type: enhancement`, `documentation` -> `type: documentation`).
-4. Deletes obsolete default GitHub labels (`good first issue`, `help wanted`, `invalid`, `question`, `wontfix`, `duplicate`).
+It creates missing labels, updates colors/descriptions, migrates legacy labels (`bug` → `type: bug`, `enhancement`,
+`documentation`) and deletes GitHub's defaults (`good first issue`, `help wanted`, `invalid`, `question`, `wontfix`,
+`duplicate`).
