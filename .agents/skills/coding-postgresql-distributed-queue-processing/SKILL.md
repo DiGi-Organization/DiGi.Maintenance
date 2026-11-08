@@ -1,11 +1,12 @@
 ---
 name: coding-postgresql-distributed-queue-processing
-description: "Use when designing or maintaining distributed bulk update queues in PostgreSQL - table schema (claimed_at, created_at, natural uniqueness), running the queue DDL from every path that touches the table (TableExistsAsync is column-blind), atomic lease claims with FOR UPDATE SKIP LOCKED ordered to match the composite claim index, native interval arithmetic (@minutes * interval '1 minute'), explicit batch acknowledgment (DELETE ... WHERE id = ANY(@ids)), poison-row retirement with an attempt counter and retirement ceiling, crash recovery, and non-destructive queue observation."
+description: "Use when designing or maintaining distributed bulk update queues in PostgreSQL - table schema (claimed_at, created_at, natural uniqueness), running the queue DDL from every path that touches the table (TableExistsAsync is column-blind), atomic lease claims with FOR UPDATE SKIP LOCKED ordered to match the composite claim index, native interval arithmetic (@minutes * interval '1 minute'), explicit batch acknowledgment (DELETE ... WHERE id = ANY(@ids)), poison-row retirement with an attempt counter (DEFAULT 0, ceiling inside the parenthesised lease condition) and retirement ceiling, a lease that must outlast the slowest batch, acknowledgment that is not owner-checked (idempotent target or claimed_at check), re-enqueue of a claimed reference (DO NOTHING vs DO UPDATE), crash recovery, non-destructive queue observation with attempted rows, and why an empty queue is not target coverage per county part."
 ---
 
 # AI Guidelines: PostgreSQL Distributed Queue Processing
 
-**Environment:** PostgreSQL 15+ / 18, Npgsql, ASP.NET Core, .NET 9.0+, C# 10+.  
+**Environment:** PostgreSQL 15+ / 18, Npgsql, ASP.NET Core, .NET 10 (`net10.0`), C# 12.  
+**Reference implementation:** the orthophoto download queue `orto_datas_building_2d_reference_update` — `OrtoDatasPostgreSQLConverter.UpdateBuilding2DReferencesAsync` (enqueue), `GetNextBuilding2DReferencesAsync` (retire + claim), `AcknowledgeBuilding2DReferencesAsync`, `GetQueueSummariesByCountyIdsAsync`, and the `nextbuilding2dreferences` / `acknowledgebuilding2dreferences` / `queuesummariesbycountyids` actions of `OrtoDatasController`. When this document and that code disagree, the code is the current state — fix the document.  
 **Domain:** Distributed background processing, multi-machine bulk updates, resilient claim/acknowledge queues, and GIS data pipelines (`DiGi.PostgreSQL`, `DiGi.GIS.PostgreSQL`, `DiGi.GIS.WebAPI`).
 
 ---
@@ -45,7 +46,7 @@ sequenceDiagram
 
 1. **Enqueue / Refresh:** The producer identifies missing or outdated records across partitions, preparing delta records and inserting them into the queue with `ON CONFLICT DO NOTHING` for idempotency.
 2. **Observe:** Read-only summary endpoints report queue depth, age distribution, and partition statistics without claiming or modifying rows.
-3. **Atomic Claim:** Workers lease batches non-destructively by setting `claimed_at = now()` using `FOR UPDATE SKIP LOCKED`.
+3. **Atomic Claim:** Workers lease batches non-destructively by setting `claimed_at = now()` and incrementing `attempts`, using `FOR UPDATE SKIP LOCKED`. Rows that already used up their attempts are retired just before the claim (section 4).
 4. **Two-Phase Acknowledge:** After successfully storing the computed results into the target table, the worker explicitly deletes the completed queue IDs. If a failure occurs, acknowledgment is skipped, and the expired lease returns the item to the queue automatically.
 
 ---
@@ -65,11 +66,13 @@ CREATE TABLE IF NOT EXISTS {tableName} (
     subdivision_id INT,
     created_at timestamptz DEFAULT now(),
     claimed_at timestamptz,
+    attempts INT NOT NULL DEFAULT 0,
     PRIMARY KEY (id, county_id)
 );
 
--- Backward-compatible column migration for existing databases
+-- Backward-compatible column migrations for existing databases
 ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS claimed_at timestamptz;
+ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0;
 
 -- Prevent duplicate queuing of the same entity within a partition
 CREATE UNIQUE INDEX IF NOT EXISTS idx_{tableName}_county_id_reference
@@ -89,6 +92,9 @@ CREATE INDEX IF NOT EXISTS idx_{tableName}_claimed_at
 2. **`claimed_at timestamptz` (Nullable):** `NULL` indicates the item is ready to be processed. A timestamp indicates an active lease.
 3. **`UNIQUE (county_id, reference)`:** Enforces that a refresh run appending tens of thousands of references never enqueues duplicates.
 4. **Composite Claim Index:** `(claimed_at ASC NULLS FIRST, created_at ASC)` allows PostgreSQL to quickly scan for unclaimed items (`NULLS FIRST`) or expired leases in FIFO creation order.
+5. **`attempts INT NOT NULL DEFAULT 0`:** the number of times the row has been **claimed**. It starts at `0` and every claim adds one, so `maxAttempts = 5` means five claims. With `DEFAULT 1`, the same ceiling would allow only four (section 4).
+6. **`county_id` is a county *part* id**, never a county code. A multi-part county has one id per polygon part (`Coding - GIS Administrative Data.md`), so its rows are spread across several `county_id` values. A summary or progress check for that county has to name every part.
+7. **`PRIMARY KEY (id, county_id)` on an unpartitioned table.** `id` alone is unique, being an identity column. PostgreSQL requires the partition column in the key only on a table partitioned by it, and this table is not partitioned. Acknowledge and look up rows by `id`, never by the `(id, county_id)` pair.
 
 ### DDL Ownership — Every Path Runs It
 The DDL method in `Create/TableAsync.cs` is the migration, and a consumer may be the first path to reach a table that predates a schema change. **Every path that reads or writes the queue table — enqueue, claim, acknowledge — runs the DDL before its own statement**, not just the producer.
@@ -104,10 +110,12 @@ Claiming rows must be atomic, non-blocking for concurrent workers, and non-destr
 
 ```sql
 UPDATE {TableName.OrtoDatas_Building2DReference_Update}
-SET claimed_at = now()
+SET claimed_at = now(),
+    attempts = COALESCE(attempts, 0) + 1
 WHERE id IN (
     SELECT id FROM {TableName.OrtoDatas_Building2DReference_Update}
-    WHERE claimed_at IS NULL OR claimed_at < now() - (@claimTimeoutMinutes * interval '1 minute')
+    WHERE (claimed_at IS NULL OR claimed_at < now() - (@claimTimeoutMinutes * interval '1 minute'))
+      AND COALESCE(attempts, 0) < @maxAttempts
     ORDER BY claimed_at ASC NULLS FIRST, created_at ASC
     FOR UPDATE SKIP LOCKED
     LIMIT @count
@@ -115,12 +123,16 @@ WHERE id IN (
 RETURNING id, county_id, reference, subdivision_id;
 ```
 
+The same method runs the retirement `DELETE` from section 4 just before this statement.
+
 ### Critical Mechanics & Gotchas
+- **Parenthesise the lease condition.** `AND` binds tighter than `OR`, so without the parentheses `claimed_at IS NULL OR <expired> AND attempts < @maxAttempts` means `claimed_at IS NULL OR (<expired> AND …)`, and a never-claimed row skips the ceiling. The retirement `DELETE` that runs first currently hides this, so nothing fails until someone copies the statement without it.
 - **`FOR UPDATE SKIP LOCKED`:** Tells PostgreSQL to skip any rows currently locked by other concurrent worker transactions rather than waiting. This allows dozens of worker machines to pull batches simultaneously without lock contention or duplicate work.
 - **`ORDER BY claimed_at ASC NULLS FIRST, created_at ASC` — the index it scans.** This matches the composite claim index created in section 2, so the claim scans that index instead of sorting a heap. The order is also a fairness rule: never-claimed rows sort first, so a row whose lease expired waits behind everything never attempted. Ordered by `created_at` alone, an expired lease returns to the **head** of the queue, and a worker failing on the rows it reaches first can re-attempt them forever ahead of the rest.
 - **The claim path runs the DDL first (section 2), not a `TableExistsAsync` guard.** The claim statement reads and writes `claimed_at`; on a table predating the column the existence guard passes and the statement raises `42703`.
 - **Lease Timeout via Native Arithmetic:** Use `(@claimTimeoutMinutes * interval '1 minute')` rather than string concatenation (`(@claimTimeoutMinutes || ' minutes')::interval`). In PostgreSQL, integer multiplication with an `interval` is native and prevents syntax or type-casting errors.
 - **Re-Queueing on Crash:** If a worker machine dies or drops network connection, the lease expires when `now() - claimed_at > claimTimeoutMinutes`. The next claiming worker will automatically pick up the abandoned rows.
+- **The lease must outlast the slowest batch.** A lease nobody renews expires on schedule, even while its worker is still busy. Set `claimTimeoutMinutes` above the worst-case time to process and store one batch at the `count` workers request, not the typical time. When it is too short, rows are handed to a second worker while the first is still processing them (section 4, *Acknowledgment is not owner-checked*), and each re-claim also uses up one of the row's attempts.
 
 ### Converter Method Signature Standard
 ```csharp
@@ -128,11 +140,13 @@ public static async Task<List<Building2DReference>?> GetNextBuilding2DReferences
     NpgsqlConnection? npgsqlConnection,
     int count = 100,
     int claimTimeoutMinutes = 30,
+    int maxAttempts = 5,
     int commandTimeout = 60,
     CancellationToken cancellationToken = default)
 ```
 - Expose both `static` (accepting `NpgsqlConnection?`) and instance extension methods.
 - Always thread `cancellationToken` and apply `commandTimeout` to `NpgsqlCommand`.
+- Return `null` when the queue cannot be reached (no connection, DDL failed, `count <= 0`, `maxAttempts <= 0`) and an **empty list** when nothing is claimable. The controller maps both to `204`; a caller of the converter must not treat `null` as "drained".
 
 ---
 
@@ -199,41 +213,32 @@ public static async Task<long> AcknowledgeBuilding2DReferencesAsync(
 > **NEVER acknowledge items before their target data is committed.**
 > Acknowledgment belongs strictly *after* `UpdateAsync` / storage commit succeeds. If saving fails or throws, skip acknowledgment so the lease expires and the work is safely retried.
 
+### Acknowledgment is not owner-checked
+`DELETE … WHERE id = ANY(@ids)` deletes the rows whoever holds them now. Suppose worker A's lease expires mid-batch and worker B claims the same rows. When A stores its results and acknowledges, B's claim is deleted while B is still working. B then stores the same result again, and its own acknowledgment deletes nothing. Two rules follow:
+- **The processing must be idempotent.** Storing the same reference's result twice must be harmless. The orthophoto target's `UpdateAsync` upserts by `(county_id, reference)`, which makes it so. A target that appends (a log, a counter, an insert with no unique key) is not idempotent and must not sit behind this queue as written.
+- **If double work matters,** acknowledge only your own lease: return `claimed_at` from the claim and delete with `WHERE id = ANY(@ids) AND claimed_at = @claimedAt`. A late acknowledgment then deletes nothing, and the row stays with its current holder. The orthophoto queue does not do this, because the upsert makes a duplicate harmless and only wasteful.
+
+### Re-enqueue while a row is claimed
+The producer enqueues with `ON CONFLICT (county_id, reference) DO NOTHING`. If it re-enqueues a reference while that reference's row is claimed, the new entry is dropped, and the worker's acknowledgment then deletes the old row. Nothing remains in the queue for the newer request.
+- This is correct when the queue entry means *"this reference needs (re)processing from the current source"* and the worker reads its input when it runs: the claimed work already covers the newer request. The orthophoto queue is this case, since the worker downloads whatever imagery the reference has at that moment.
+- It is **wrong** when the entry carries a payload or describes a change that happened after the claim. Such a queue must use `ON CONFLICT … DO UPDATE SET claimed_at = NULL, attempts = 0, …` so the row goes back to the queue, and its acknowledgment must be owner-checked as above, or the reset row is deleted along with the old claim.
+
 ### Poison Rows — Attempt Counter & Retirement Ceiling
 
-With acknowledgment correctly confined to work that was stored, a reference that can **never** resolve is never retired: the lease expires, the row is claimed again, it fails again, and the queue acquires a floor of permanently failing rows that a worker keeps reaching. A queue without an attempt counter cannot tell a transient fault from a data defect.
+With acknowledgment correctly confined to work that was stored, a reference that can **never** resolve is never retired: the lease expires, the row is claimed again, it fails again, and the queue acquires a floor of permanently failing rows that a worker keeps reaching. A queue without an attempt counter cannot tell a transient fault from a data defect. Every queue carries the guard below. The orthophoto queue adopted it in `DiGi-Organization/DiGi.GIS.PostgreSQL#48`.
 
 The standard guard has three parts:
 
-1. **Attempt counter.** New queue tables carry an attempt count, added by migration for existing ones:
-   ```sql
-   ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 1;
-   ```
-   The claim increments it, so every re-attempt after an expired lease is counted:
-   ```sql
-   UPDATE {tableName}
-   SET claimed_at = now(), attempts = COALESCE(attempts, 0) + 1
-   WHERE id IN (
-       SELECT id FROM {tableName}
-       WHERE claimed_at IS NULL OR claimed_at < now() - (@claimTimeoutMinutes * interval '1 minute')
-         AND COALESCE(attempts, 0) < @maxAttempts
-       ORDER BY claimed_at ASC NULLS FIRST, created_at ASC
-       FOR UPDATE SKIP LOCKED
-       LIMIT @count
-   )
-   RETURNING id, county_id, reference, subdivision_id;
-   ```
-   `COALESCE` keeps rows predating the column claimable. `@maxAttempts` is a method parameter beside `claimTimeoutMinutes`; the ceiling is a policy decision — high enough that transient faults (network, service outage) recover before it is reached, low enough that a reference that can never resolve is retired rather than cycled forever.
+1. **Attempt counter.** `attempts INT NOT NULL DEFAULT 0`: the table DDL creates it and the migration adds it to existing tables (section 2). The claim increments it (section 3), so every re-attempt after an expired lease is counted, and it also carries the ceiling (`AND COALESCE(attempts, 0) < @maxAttempts`, inside the parenthesised lease condition). `COALESCE` keeps rows predating the column claimable. `@maxAttempts` is a method parameter beside `claimTimeoutMinutes`, default `5`. The ceiling is a policy decision: high enough that transient faults (network, service outage) clear before it is reached, low enough that a reference that can never resolve is retired rather than cycled forever. Counting from `0` makes `maxAttempts` the number of claims a row gets.
 2. **Retirement ceiling.** The claim method retires exhausted rows **before** it claims, so no worker ever sees them again:
    ```sql
    DELETE FROM {tableName}
    WHERE COALESCE(attempts, 0) >= @maxAttempts
    RETURNING id, county_id, reference;
    ```
-   Every retired reference is logged at error level with enough identity (partition + reference) to file a data defect — a permanently failing reference is a problem worth a ticket, never a silent drop.
+   Every retired reference is logged at error level with enough identity (partition + reference) to file a data defect — a permanently failing reference is a problem worth a ticket, never a silent drop. The log lives on the server running the WebAPI that served the claim (`Coding - Deployed WebAPI.md` §5), not on the worker.
+   **Cost:** there is no index on `attempts`, so this `DELETE` scans the whole queue on every claim. That is cheap at today's queue sizes. If a queue grows into the millions, measure first, then either index `attempts` or move retirement out of the claim path. A partial index cannot do the job, because its predicate is fixed at creation and cannot follow the `@maxAttempts` parameter.
 3. **Retirement is not acknowledgment.** Acknowledgment retires rows whose work was **stored**; retirement discards rows whose work **provably failed** its ceiling of attempts. Both are explicit deletions, but they answer different questions, and only the former belongs inside the worker loop.
-
-> **Current state:** the `orto_datas_building_2d_reference_update` queue predates this standard and carries no attempt counter yet — adoption is tracked in `DiGi-Organization/DiGi.GIS.PostgreSQL#48`. The samples in sections 2–4 reflect the queue as it exists today; this subsection is the target for new queues.
 
 ---
 
@@ -268,6 +273,7 @@ public static async Task<List<OrtoDatasQueueResult>?> GetQueueSummariesByCountyI
             county_id,
             COUNT(*),
             COUNT(*) FILTER (WHERE subdivision_id IS NOT NULL),
+            COUNT(*) FILTER (WHERE COALESCE(attempts, 0) > 0),
             MIN(created_at), MAX(created_at)
         FROM {TableName.OrtoDatas_Building2DReference_Update}
         {(countyIds_Array is null ? string.Empty : "WHERE county_id = ANY(@countyIds)")}
@@ -289,8 +295,9 @@ public static async Task<List<OrtoDatasQueueResult>?> GetQueueSummariesByCountyI
             npgsqlDataReader.GetInt32(0),
             npgsqlDataReader.GetInt64(1),
             npgsqlDataReader.GetInt64(2),
-            npgsqlDataReader.IsDBNull(3) ? null : npgsqlDataReader.GetFieldValue<DateTimeOffset>(3),
-            npgsqlDataReader.IsDBNull(4) ? null : npgsqlDataReader.GetFieldValue<DateTimeOffset>(4)));
+            npgsqlDataReader.GetInt64(3),
+            npgsqlDataReader.IsDBNull(4) ? null : npgsqlDataReader.GetFieldValue<DateTimeOffset>(4),
+            npgsqlDataReader.IsDBNull(5) ? null : npgsqlDataReader.GetFieldValue<DateTimeOffset>(5)));
     }
 
     return result;
@@ -300,7 +307,16 @@ public static async Task<List<OrtoDatasQueueResult>?> GetQueueSummariesByCountyI
 ### Summary Requirements
 - Group by partition/scope (e.g. `county_id`).
 - Report total count (`COUNT(*)`), filtered counts (e.g. `COUNT(*) FILTER (...)`), and oldest/newest timestamps (`MIN(created_at)`, `MAX(created_at)`).
+- Report the **attempted** rows (`COUNT(*) FILTER (WHERE COALESCE(attempts, 0) > 0)`, `OrtoDatasQueueResult.AttemptedCount`). Without it, a part whose rows are all failing over and over looks the same as a part that has simply not been reached yet.
 - An empty result or `404 NotFound` indicates the queue is drained or not initialized.
+
+### An empty queue does not mean the work is complete
+Queue depth answers *"what is still waiting"*. It cannot answer *"is the target complete"*:
+- a reference the producer never enqueued leaves no trace;
+- a retired poison row has left the queue without its work being stored;
+- an acknowledged batch says nothing about rows written later by another path.
+
+Completeness is measured on the **target table**, per county part, against its source: `summariesbycountyids` for the orthophoto store, and `buildingdata/coveragebycountyid` / `terrain/coveragebycountyid` for theirs. For a batch task that runs without a queue, the coverage endpoint is the *only* progress measure. The acquisition-date backfill is such a task, measured by `ortodatas/acquisitioncoveragesbycountyids` (`DiGi-Organization/DiGi.GIS.PostgreSQL#134`). For a multi-part county, name every part in either kind of request.
 
 ---
 
@@ -314,18 +330,16 @@ Controllers expose two endpoints for queue interaction:
 [ProducesResponseType(typeof(List<Building2DReference>), StatusCodes.Status200OK)]
 [ProducesResponseType(StatusCodes.Status204NoContent)]
 [ProducesResponseType(StatusCodes.Status400BadRequest)]
-public async Task<IActionResult> NextBuilding2DReferencesAsync(
-    [FromQuery(Name = "count")] int count = 100,
-    [FromQuery(Name = "claimtimeoutminutes")] int claimTimeoutMinutes = 30,
-    [FromQuery(Name = "commandtimeout")] int commandTimeout = 60,
-    CancellationToken cancellationToken = default)
+public async Task<IActionResult> NextBuilding2DReferencesAsync([Minimum(1), FromQuery(Name = "count")] int count = 100, [Minimum(1), FromQuery(Name = "claimtimeoutminutes")] int claimTimeoutMinutes = 30, [Minimum(1), FromQuery(Name = "maxattempts")] int maxAttempts = 5, [Minimum(0), FromQuery(Name = "commandtimeout")] int commandTimeout = 60, CancellationToken cancellationToken = default)
 {
     if (count <= 0) return BadRequest("Count must be greater than 0.");
     if (claimTimeoutMinutes <= 0) return BadRequest("Claim timeout minutes must be greater than 0.");
+    if (maxAttempts <= 0) return BadRequest("Max attempts must be greater than 0.");
+    if (commandTimeout < 0) return BadRequest();
     if (ortoDatasPostgreSQLConverter is null) return BadRequest();
 
     List<Building2DReference>? references = await ortoDatasPostgreSQLConverter.GetNextBuilding2DReferencesAsync(
-        count, claimTimeoutMinutes, commandTimeout, cancellationToken: cancellationToken);
+        count, claimTimeoutMinutes, maxAttempts, commandTimeout, cancellationToken: cancellationToken);
 
     if (references is null || references.Count == 0) return NoContent();
 
@@ -383,15 +397,19 @@ while (postResponse_References?.Result is List<Building2DReference> references &
 
 When implementing a new distributed queue in DiGi solutions, verify:
 
-- [ ] Queue table schema includes `claimed_at timestamptz` and migration statement?
+- [ ] Queue table schema includes `claimed_at timestamptz` and `attempts INT NOT NULL DEFAULT 0`, each with its `ADD COLUMN IF NOT EXISTS` migration?
 - [ ] Every claim and acknowledge path runs the DDL rather than checking existence?
-- [ ] Unique constraint on `(partition_id, reference)` prevents duplicate queuing?
+- [ ] Unique constraint on `(county_id, reference)` prevents duplicate queuing, with `county_id` a county **part** id?
 - [ ] Composite index on `(claimed_at ASC NULLS FIRST, created_at ASC)` created?
 - [ ] Claim statement orders by `claimed_at ASC NULLS FIRST, created_at ASC`, so an expired lease cannot pre-empt never-attempted rows?
 - [ ] Claim statement uses `FOR UPDATE SKIP LOCKED` and native interval multiplication (`@minutes * interval '1 minute'`)?
-- [ ] Claim method accepts `count`, `claimTimeoutMinutes`, `commandTimeout`, and `CancellationToken`?
-- [ ] Acknowledge method deletes by ID array (`WHERE id = ANY(@ids)`)?
-- [ ] Attempt counter with a retirement ceiling retires permanently failing references, logged at error?
+- [ ] Claim statement increments `attempts` and parenthesises the lease condition before `AND COALESCE(attempts, 0) < @maxAttempts`?
+- [ ] Claim method accepts `count`, `claimTimeoutMinutes`, `maxAttempts`, `commandTimeout`, and `CancellationToken`, and the controller binds `maxattempts`?
+- [ ] `claimTimeoutMinutes` exceeds the worst-case time to process and store one batch?
+- [ ] Acknowledge method deletes by ID array (`WHERE id = ANY(@ids)`), and the target write is idempotent, or the acknowledgment is owner-checked on `claimed_at`?
+- [ ] Re-enqueue of a claimed reference is either covered by the in-flight work (`DO NOTHING`) or resets the row (`DO UPDATE`), and that choice is documented on the producer?
+- [ ] Retirement runs before the claim and logs every retired reference at error?
 - [ ] Workers invoke acknowledgment **only after** storage write completes successfully?
-- [ ] Read-only observation endpoint (`queuesummaries...`) exists and does not drain the queue?
+- [ ] Read-only observation endpoint (`queuesummaries...`) exists, reports attempted rows, and does not drain the queue?
+- [ ] Completeness is measured on the target table per county part, not inferred from an empty queue?
 - [ ] All public methods and endpoints have comprehensive XML documentation?
