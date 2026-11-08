@@ -47,7 +47,14 @@ Then, in order (`DiGi.GIS.YOLO.UI`, `DiGi.YOLO.ONNX` are recent examples):
   - `CA2200` (`throw exception;`): drop the catch or `throw;`. `CA1036`: add `<`/`<=`/`>`/`>=` that follow `CompareTo`,
     null first.
   - `CS0104` after `ImplicitUsings` (`Timer`, …): `using Timer = <the namespace the file meant>.Timer;`.
-  - `CA1200`: `<see cref="Classes.X"/>`, not `T:`; ``X`1`` becomes `X{T}`.
+  - `CA1200`: `<see cref="Classes.X"/>`, not `T:`; ``X`1`` becomes `X{T}`. The compiler never checked a prefixed cref,
+    so dropping `T:` can surface a wrong target as `CS1574` — point it at the real namespace (inside `Create`, a bare
+    `X` binds to the `X` factory method).
+  - `CA1822`: the code fix (`dotnet format analyzers`) also makes a **public** instance member `static` — every
+    `instance.Method(...)` caller breaks, and reflection with `BindingFlags.Instance` misses it silently. Accept it
+    only for non-public members; suppress on a public one.
+  - `CA2016`: forward the token (`cancellationToken: cancellationToken` after a skipped default) — a deliberate
+    behavior change (a requested cancel now stops that step too), so the commit says so; `CA1068`: token last.
   - A design rule on a public or serialized name (`CA1710`, `CA1010`, `CA1000`, `CA1859` on a serialized field,
     `CA5350`/`CA5351` on a non-security hash, `CA2201`, `CA1069`): `[SuppressMessage(..., Justification = "...")]` or a
     `#pragma` with its reason at the site — renaming a public or wire type is a breaking change, not a fix.
