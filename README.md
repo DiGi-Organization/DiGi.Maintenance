@@ -62,9 +62,9 @@ the guidelines listed in §9 — read the one matching the task.
    (`filterConditions`, `point3Ds` — not `listConditions`). A property named after its unique, descriptive type
    (`public AggregateFunction AggregateFunction { get; set; }`). Primitives: plain camelCase.
 4. **Zero warnings/analyzer messages.**
-5. **Block-scoped namespaces** (`namespace DiGi.Domain { ... }`); file-scoped are prohibited (`.editorconfig`). The template
-   pins `LangVersion` 12; most repositories use `latest`, core libraries target `netstandard2.0` — use
-   `System.Threading.Lock` only in net9+ projects at C# 13+.
+5. **Block-scoped namespaces** (`namespace DiGi.Domain { ... }`); file-scoped are prohibited (`.editorconfig`). Every
+   repository builds at `LangVersion latest` with `AnalysisLevel latest-recommended` (template props); core libraries
+   target `netstandard2.0` — use `System.Threading.Lock` only in net9+ projects.
 6. **Parameter line breaks (`<= 7` rule, `DIGI0001`):** ≤ 7 parameters on one line however long; ≥ 8 one per line. Line
    length is never the trigger. Call sites prefer one line; multi-line for complex expressions, lambdas, initializers.
    ```csharp
