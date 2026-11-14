@@ -1,6 +1,6 @@
 ---
 name: coding-grasshopper
-description: "Use when writing or changing a Grasshopper/Rhino plug-in component (DiGi.*.Rhino) - VariableParameterComponent anatomy, a fixed ComponentGuid that never changes, name-based Params.IndexOfInputParam lookups (a typo silently returns -1), Goo and Param pairs per file, Inspect methods, RhinoInfo, and the .csproj (Grasshopper IncludeAssets compile;build, OutputPath ..\\bin, .gha copy)."
+description: "Use when writing a Grasshopper/Rhino component (DiGi.*.Rhino) - fixed ComponentGuid, name-based parameter lookup, Goo/Param pairs, Inspect, .gha project setup."
 ---
 
 # AI Guidelines: Grasshopper / Rhino Plug-ins (`DiGi.*.Rhino`)

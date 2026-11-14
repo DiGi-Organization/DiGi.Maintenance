@@ -3,6 +3,16 @@
 Scope: `DiGi.Maintenance/Scripts/*.ps1` and the build/deploy flow they drive, plus any scripted or bulk file edit.
 `Scripts/README.md` is the command catalog (exact invocations); this file holds conventions and traps.
 
+## Checklist
+Read this first; open a section only when its line applies to the task.
+- **Context scripts first** — before reading files or logs, run the script that answers the question in a few lines: `StatusAllRepos`, `GetApi`, `TestSummary`, `BuildAll -Summary`, `CheckGuidelineRules`, `FilterIssues`, `MeasureAgentContext` (§7).
+- Run from `Scripts` with `-NoProfile -ExecutionPolicy Bypass -File`, host shell, absolute output paths; read a script before trusting its exit code (§1).
+- Machine settings come from `user files/*.conf` keys; never print a conf, never hard-code a path (§2).
+- Cross-repository sweeps commit per repository; decide `-NoCommit` before the run — a dry run followed by a committing run commits nothing (§3).
+- `BuildAll.ps1` builds its hard-coded order, never `--no-incremental` across it; `Deploy.ps1`/`SyncDirectory.ps1` semantics (§4).
+- A new script: comment-based help, `param()`, `$ErrorActionPreference = "Stop"`, exit 0/1/2, idempotent, documented in `Scripts/README.md` (§5).
+- Scripted edits: edit bytes and assert the match count, never `sed -i`; the `git add` flag decides the stored line ending; check `git diff --stat` for deletions you did not make (§6).
+
 ## 1. Execution model
 1. Run from `Scripts` with `PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\Script.ps1" -Switch` (`-NoProfile`
    matters when timing or comparing runs).
@@ -44,7 +54,8 @@ They walk `Get-ChildItem -Directory -Filter "DiGi.*"` under the workspace root (
 - **`BuildAll.ps1`** builds its hard-coded `$solutionOrder` in Release — **not** every `DiGi.*` folder; a new solution is
   skipped until added after everything it references by `HintPath`. Never force `--no-incremental` across the sweep (it can
   delete `DiGi.Core\bin` before its consumers compile, `Coding - Host Dependencies.md` §6). `-CheckDependencies` runs
-  `CheckHostDependencies.ps1` over the output (§8 there).
+  `CheckHostDependencies.ps1` over the output (§8 there). `-Summary` prints only failed or warning solutions with
+  de-duplicated diagnostics instead of the MSBuild log; `-Solution "<Repo>"` builds one entry of the order.
 - **`Deploy.ps1`** builds (unless `-SkipBuild`; a failed build copies nothing), syncs `bin` closures to
   `SOFTWARE_DIRECTORY`, purges `logs` from destinations unless `-RemoveLogs:$false`. Opt-ins:
   `INCLUDE_YEAR_BUILT_PREDICTION_EXTENSION` (`Coding - YOLO.md` §5), `INCLUDE_LAYA_MODELS` (`Coding - Laya.md` §5).
@@ -67,6 +78,10 @@ They walk `Get-ChildItem -Directory -Filter "DiGi.*"` under the workspace root (
 5. Idempotent re-runs (`InstallPythonEnvironment.ps1`, `DeployLaya.ps1` skip unchanged work).
 6. Document the invocation in `Scripts/README.md` in the same change; a rule agents must follow also gets a guideline
    (`Maintenance - AI Guidelines Propagation.md`).
+7. **Output an agent reads is compact:** one line per finding (`<Kind> <path>:<line> <detail>`), nothing for what is fine,
+   one summary line, workspace-relative paths, a `-Json` switch emitting a single `ConvertTo-Json -Compress` line. Capture a
+   tool's log and print its diagnostics, never the log. Keep the file ASCII (Windows PowerShell reads a BOM-less script
+   as ANSI) and never redirect a native command's stderr under `$ErrorActionPreference = "Stop"` (it throws).
 
 ## 6. Scripted edits, line endings and the commit
 The working tree is CRLF (`.editorconfig` `end_of_line = crlf`; `core.autocrlf=true`), and the common tools do not
@@ -96,3 +111,22 @@ preserve it. The damage compiles; it costs the review.
   when it would differ. `UpdateReadmes.ps1` once committed CRLF over every LF `README.md` — a full rewrite of 66 repos
   for a five-line change ([DiGi.Maintenance#11](https://github.com/DiGi-Organization/DiGi.Maintenance/issues/11)).
 - Markdown bodies sent to GitHub have their own `\r\r\n` trap (`GitHub - Issues.md` §1).
+
+## 7. Context scripts — run one before reading files or logs
+Read-only, compact output (§5.7). Each replaces a reading that costs far more context than its answer:
+
+| Question | Script | Instead of |
+|---|---|---|
+| Which repositories are dirty, behind, ahead or on the wrong branch? | `StatusAllRepos.ps1` (`-Repo`, `-All`, `-Json`) | `git status` per repository |
+| What is the signature and summary of a type or member? | `GetApi.ps1 -Assembly "DiGi.Core" -Match "Query\.Clone"` | a namespace page of `documentation/API` (up to ~900 KB) or the `.cs` file |
+| Do the facts pass after my change? | `TestSummary.ps1 -Library <csproj> -Project <xUnit>` (`-Filter`) — builds the library first | `dotnet build` + `dotnet test` logs |
+| Does everything downstream still build? | `BuildAll.ps1 -Summary` (`-Solution "<Repo>"`) | the MSBuild log of ~75 solutions |
+| Did I break a rule no analyzer checks? | `CheckGuidelineRules.ps1 -Repo <Repo> -Changed` | re-reading the changed files against the guidelines |
+| Which issues match? | `FilterIssues.ps1` (`GitHub - Issues.md` §4) | raw `gh` JSON |
+| What does every agent session load? | `MeasureAgentContext.ps1` | — |
+| Did a guideline edit lose a fact? | `CheckGuidelineLossless.ps1 -BaseRef HEAD` | diffing by eye |
+
+`CheckGuidelineRules.ps1` is text-based: a reported line is a candidate, not a verdict, and it repeats nothing the build
+already fails on. `GetApi.ps1` is as fresh as the last build of the assembly. The same commands are packaged as workflow
+skills (`digi-verify`, `digi-status`, `digi-api`, `digi-issue`, `digi-guideline-change`,
+`Maintenance - AI Guidelines Propagation.md` §2).

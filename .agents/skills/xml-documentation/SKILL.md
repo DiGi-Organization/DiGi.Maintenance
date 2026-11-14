@@ -1,6 +1,6 @@
 ---
 name: xml-documentation
-description: "Use when reading a type's public API (documentation/API/ before .cs), adding missing XML doc comments, or auditing existing ones against current signatures - every public member documented, params in signature order, one summary, no blank lines (<para>), no docs on partial declarations, full summaries on overrides, issue citations."
+description: "Use when reading a public API (documentation/API before .cs) or adding or auditing XML doc comments - every public member, params in signature order, one summary, no docs on partial declarations."
 ---
 
 # AI Guidelines: XML Documentation & Generated API Docs
@@ -9,12 +9,16 @@ description: "Use when reading a type's public API (documentation/API/ before .c
 `documentation/API/<AssemblyName>/` in each repository holds one Markdown file per namespace (`DiGi.Core.Classes.md`)
 with exact signatures and `<summary>`s of every public member. Read it to learn a public API; open `.cs` only to edit it
 or to read internal logic. Fallback when the folder is absent: the source and `bin/*.xml`. The docs regenerate on every
-build — rebuild after changing a signature or a doc comment.
+build — rebuild after changing a signature or a doc comment. A namespace page runs to hundreds of kilobytes: look a
+member up instead of reading the page —
+`DiGi.Maintenance/Scripts/GetApi.ps1 -Assembly "DiGi.Core" -Match "Query\.Clone"` prints `signature  // summary` per match.
 
 ## 2. Rules for every doc comment
 1. Touch `///` comments only — never code logic.
 2. Every public constructor, property, method and enum value is documented: `<summary>`, every `<param>` (in signature
    order — reorder when parameters move, e.g. `CancellationToken` last), `<returns>`, `<typeparam>` — no CS1591/CS1573.
+   The build reports only CS1573 (a parameter without its tag): CS1591 (a member without any comment) is switched off
+   in `.editorconfig` (`Coding - Project Setup.md` §4), so a missing comment is yours to catch.
 3. Exactly one `<summary>` per member; overwrite a stale one, never append a second.
 4. No blank or bare `///` lines inside a block (breaks Visual Studio tooltips); paragraph breaks are `<para>` (preferred
    over `<remarks>`):

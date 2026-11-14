@@ -3,7 +3,29 @@
 Applies to every C# change. Task-specific detail lives in its own file: serialization (`Coding - Serialization.md`),
 NuGet / `HintPath` host dependencies and build errors (`Coding - Host Dependencies.md`), project and `.editorconfig`
 setup (`Coding - Project Setup.md`), optimizing and benchmarks (`Coding - Performance.md`). Section and rule numbers are
-stable — moved items keep a pointer.
+stable — moved items keep a pointer. Incidents and measurements behind the rules:
+[Evidence](Evidence/Coding%20-%20General.md) (read only when a rule is disputed or being changed).
+
+## Checklist
+Read this first; open a section only when its line applies to the change.
+- English only; no `var`; target-typed `new()`; collection expressions `[]`; block-scoped namespaces; zero warnings (§1.1–1.5).
+- Names start with the type name in camelCase + `_` qualifier; acronym types lowercase the first letter only; collections = pluralized element type (§1.3).
+- ≤ 7 parameters on one line however long, ≥ 8 one per line (`DIGI0001`) (§1.6). Async names end with `Async` (§1.7).
+- `CancellationToken` last; new optional parameters before it; name every argument after a skipped default (§1.8).
+- Simplify member access, then rebuild; namespaces bind innermost-outwards; call a same-named extension fully qualified (§1.9).
+- Temporary code: `TODO [MarkerName]:` + removal condition at every site; never on permanent code (§1.12).
+- A fix to generated code goes into the generator (§1.13). Scripted edits: `Maintenance - Scripts.md` §6 (§1.14).
+- A check that skips absent input fails open — decide what absence means (§1.15). Options defaults are the contract (§1.16).
+- Extension receivers box, never convert — one overload per primitive; probe binding claims, don't reason (§1.17).
+- Reflection by name is a contract on the hierarchy — document both ends, probe `GetMethod` (§1.18).
+- `ToString()` is not a key — identity strings render through `InvariantCulture` (§1.19).
+- No caching in an optimization unless allowed (§1.20). Log via `Serilog.Modify.Log` templates (§1.21).
+- Rethrow only a requested cancellation, before any general catch (§1.22).
+- Architecture: data in `/Classes`, behavior in `Query`/`Modify`/`Create`/`Convert` extensions; no service classes; category folders add no namespace (§2).
+- Interface-contract members stay instance methods; constructors only assign and clone, work goes in a nullable `Create` factory (§2).
+- One public method per file in `Query`/`Modify`/`Create`; no private methods there; `Convert` first for conversions; `Query` names property-like; `IResult` types end in `Result` (§2).
+- Enums start with `Undefined`; constants in `X.Constants` categories; tolerances from `DiGi.Core.Constants.Tolerance` (§2).
+- Secrets and generated output in git-ignored `user files/`, committed assets in `files/`; never print a conf; edit a build-copied asset at its source (§3).
 
 ## 1. Core Rules
 
@@ -25,9 +47,9 @@ stable — moved items keep a pointer.
 8. **`CancellationToken` is the LAST parameter (CA1068)** of every method and overload; insert new optional parameters
    before it and reorder the `<param>` tags to match.
    - **At call sites, pass by name every argument after a skipped default** (`commandTimeout: 30`,
-     `cancellationToken: cancellationToken`), so an inserted parameter fails to compile instead of rebinding: DiGi.PostgreSQL
-     `7cd4937` inserted `int maxGroups` before `commandTimeout`, and every positional caller's timeout became the group cap
-     (`cd88e7a`, #16). Named arguments also avoid CS0121 between overloads after a reorder.
+     `cancellationToken: cancellationToken`), so an inserted parameter fails to compile instead of rebinding (an inserted
+     `int maxGroups` once silently took every positional caller's timeout). Named arguments also avoid CS0121 between
+     overloads after a reorder.
    - Detect: `grep -rnE "CancellationToken [a-zA-Z_]+( = default)?, " --include=*.cs .` — any hit not last is a violation.
 9. **Simplify member access (IDE0002/IDE0001) — then rebuild.** Inside `DiGi`, drop qualifiers the compiler does not need
    (`Serilog.Modify.Log(...)`). C# binds the first segment against each enclosing namespace innermost-outwards with no
@@ -37,8 +59,7 @@ stable — moved items keep a pointer.
    - **Same-named extension methods bind by `using`, and the wrong one compiles.** The more derived parameter wins, but
      only among imported namespaces: `Core.Query.UniqueId(this ISerializableObject?)` is a content hash,
      `Core.IO.Query.UniqueId(this IColumn?)` the stored slug (`floor_area`); `column.UniqueId()` returns the hash wherever
-     `DiGi.Core.IO` is not imported — a projection built from hashes matched no column, and a regressor fitted a
-     full-looking 174-column table of zeros. **When several can apply, call the intended one fully qualified**
+     `DiGi.Core.IO` is not imported. **When several can apply, call the intended one fully qualified**
      (`Core.IO.Query.UniqueId(column)`).
    - Binding errors that refuse to compile:
 
@@ -60,38 +81,28 @@ stable — moved items keep a pointer.
       (`DiGi.Core/Query/TryParseLegacy.cs`); `[TEMPORARY]` first in the `<summary>` when removing a public member is an
       API change (`DiGi.GIS.WebAPI.UI/Controllers/SolarController.cs`).
     - A workaround for a defect in **another** DiGi repository is temporary too: name the marker after the workaround and
-      make the upstream fix the removal condition. `TerrainCuttingMaxBuildingCount = 250` said "temporary" in prose only
-      and outlived its cause; correct form: `TODO [TerrainCuttingCap]: remove once DiGi-Organization/DiGi.Geometry#2 ships
+      make the upstream fix the removal condition: `TODO [TerrainCuttingCap]: remove once DiGi-Organization/DiGi.Geometry#2 ships
       the triangulator fix.`
     - Never tag permanent code shipped in the same change.
 13. **Hand-fixes to generated code are lost on regeneration — record them in the generator.** Files a tool writes (ML.NET
     Model Builder `*.consumption.cs`/`*.evaluate.cs`/`*.training.cs`, `mlnet` output, anything with an auto-generated
     header) revert every hand correction silently; a comment inside them is regenerated away. Put each fix in the
-    generator or post-processing script, or in a checklist beside the file. One regeneration of
-    `DiGi.GIS.ML/OrtoBuildingDetectionModel.*.cs` reverted five at once: explicit `Plotly.NET` `LinearAxis.init` type
-    arguments, `<paramref>` instead of a `<param>` in prose, initialisers for non-nullable members, a deployment-aware
-    model path resolver, a qualified `Query.UniqueId` (§1.9). Generated defaults embed the generating machine
+    generator or post-processing script, or in a checklist beside the file. Generated defaults embed the generating machine
     (`RetrainFilePath`, `.mbconfig` `DataSource.FilePath`) — make them relative before committing.
 14. **Scripted edits and line endings** → `Maintenance - Scripts.md` §6.
-15. **A check that skips absent input fails open.** "If a value was given, validate it" passes when nothing was given:
-    `YOLOEnvironmentResult` probed the weights only `if (!string.IsNullOrWhiteSpace(path_Model))`, so a `null` `ModelPath`
-    passed the preflight, exported 55 366 images over 4.5 minutes and failed on the first real open
-    (`DiGi.GIS.YOLO.UI#6`). Decide what absence means (refuse or default), and resolve a path the way the consumer will
-    before calling it absent.
+15. **A check that skips absent input fails open.** "If a value was given, validate it" passes when nothing was given
+    (a probe guarded by `if (!string.IsNullOrWhiteSpace(path_Model))` lets a `null` path through the preflight). Decide
+    what absence means (refuse or default), and resolve a path the way the consumer will before calling it absent.
 16. **A configuration class's defaults are the contract wherever no file is read.** Once a caller constructs options
-    without a file, the initialisers are its entire configuration: `YearBuiltPredictionPipelineOptions.ModelPath`
-    defaulted to `null` (its `<summary>` promised a search that no longer existed), fatal to every tray run, whose dialog
-    offers no weights control (`DiGi.GIS.PostgreSQL.UI#9`). Where a UI omits a control, give the default a working value
-    and say so in the `<summary>`; re-check the defaults whenever a new caller constructs the class.
+    without a file, the initialisers are its entire configuration. Where a UI omits a control, give the default a working
+    value and say so in the `<summary>`; re-check the defaults whenever a new caller constructs the class.
 17. **An extension-syntax receiver only boxes — it never converts numerically.** With `UniqueId(this int)`,
     `(this short)`, …, `(this object?)` in scope, `((byte)5).UniqueId()` binds to `object` while `Query.UniqueId((byte)5)`
     binds to `short`. Give every primitive the family accepts its own overload (nullable included). **Verify binding and
-    compile-error claims with a scratch console app, not by reasoning:** in `DiGi.Core#5` the issue, the implementation
-    summary and the review draft disagreed; a 40-line probe showed the issue right and nothing ambiguous.
+    compile-error claims with a scratch console app, not by reasoning.**
 18. **A member resolved by name through reflection is a contract on the whole hierarchy.** `DiGi.Typology.Query.RuleData`
-    calls `type.GetMethod(nameof(RuleData))`, which forbids any derived rule from hiding `RuleData` with `new` — the
-    `DiGi.Typology.Visual` rules had to be re-parented onto `TypologyFilterRule`. Document the constraint at the
-    reflection site and in the base type's `<summary>`; prefer a non-generic interface member
+    calls `type.GetMethod(nameof(RuleData))`, which forbids any derived rule from hiding `RuleData` with `new`. Document
+    the constraint at the reflection site and in the base type's `<summary>`; prefer a non-generic interface member
     (`ITypologyFilterRule.RuleData(object?)`) while the design is open; probe `GetMethod` (hide-by-signature is not
     overload resolution).
 19. **`ToString()` is not a key.** `Range<T>.ToString()` and `$"[{min}, {max}]"` follow `CurrentCulture`, so a key filed
@@ -185,6 +196,7 @@ related methods are separate files (`TryGetNearestIndexes`, `NearestIndexes`, `N
 A nested type gets its own file `[Outer].[Inner].cs` beside the outer one, which is declared `partial` (no `<summary>` on
 the repeated declaration) — keep it nested (`PointCloud3D.Point.cs`, `PointCloud3D.Enumerator.cs`); promoting it changes
 the public API. Exception: a Grasshopper Goo + Param pair (`Coding - Grasshopper.md` §2).
+Check: `DiGi.Maintenance/Scripts/CheckGuidelineRules.ps1 -Repo <Repo> -Changed` (also the next rule and the `Query` naming).
 
 ### No private methods in `Query`/`Modify`/`Create`/`Convert`
 A reusable helper becomes a `public static` method of the right partial class (its own file); a single-use helper becomes
@@ -252,16 +264,13 @@ Never a magic number: `Distance` (1e-6 — point proximity, intersections, verte
   ```
 - **`user files/` ships:** `Deploy.ps1` carries `bin` to the hosts, so it holds only what the deployed tool reads at
   runtime. Training data, alternative weights and experiment inputs live outside the workspace, named by absolute path
-  (`Coding - YOLO.md` §3 — 1.17 GB of model variants once rode along on every deploy).
-- **Never print a `user files/` conf — not even "redacted" — until the redaction is proven.** A
-  `sed -E 's/(Password|pwd)=[^;]*/…/'` written for `Key=value;` matched nothing in a conf shaped `PASSWORD="value"` and the
-  password reached the transcript. Learn the shape from the key names (`grep -o '^[A-Z_]*='`), assert the secret is absent
-  before showing anything, or report only the non-sensitive fact (host, database). A printed secret is reported at once —
-  it must be rotated.
+  (`Coding - YOLO.md` §3).
+- **Never print a `user files/` conf — not even "redacted" — until the redaction is proven.** Learn the shape from the
+  key names (`grep -o '^[A-Z_]*='`), assert the secret is absent before showing anything, or report only the
+  non-sensitive fact (host, database). A printed secret is reported at once — it must be rotated.
 - **A build-copied asset is edited only at its source.** A file a build target copies in (`gltf-viewer-core.js` via
   `CopyGLTFViewerCore`, `gis-theme.css` via `CopyGISTheme`) is overwritten by the next build, which looks like a
-  mysterious revert (`DiGi.GIS.WebAPI.UI#58`; bodyplan `94aa1b6` lost its #123 fix). Edit the owner, build, and commit both
-  copies when the copy is tracked (`Coding - WebAPI GLTF.md` §4).
+  mysterious revert. Edit the owner, build, and commit both copies when the copy is tracked (`Coding - WebAPI GLTF.md` §4).
 
 ---
 

@@ -3,6 +3,16 @@
 Traps of the geometry stack the signatures do not show; each produced a **plausible wrong answer rather than an error**.
 Geometry primitives keep their interface-contract instance methods (`Coding - General.md` §2).
 
+## Checklist
+Read this first; open a section only when its line applies to the change.
+- Sun/light direction negated before dotting with a normal?
+- Zero-length guard on `Length`, not `Unit == null` or `Angle`?
+- Orientation facts include an asymmetric face?
+- Closure as "closes at some tolerance ≤ T"?
+- Sub-tolerance corners removed before `Triangulate`?
+- Grouping hash keys rounded, ordinates mixed sequentially, buckets histogrammed?
+- Point sweeps through `PolygonalFace2DPointRelationSolver`, coordinates flattened in hot loops?
+
 ## 1. Vectors and directions
 - **`DiGi.Solar.Query.SunDirection` is a propagation vector — it points AWAY from the sun:**
   `-(cos el·sin az, cos el·cos az, sin el)`, so `z = -sin(elevation)` points down while the sun is up. Incidence is
@@ -72,11 +82,4 @@ Both traps keep answers correct but slow (a collision or split key only demotes 
 - **Write parity facts before trusting "same semantics"** — they exposed a `PolygonalFace2D.InRange` bug (the outline's `On`
   dropped when the face had holes). Measuring: `Coding - Performance.md`.
 
-## 7. Checklist
-- [ ] Sun/light direction negated before dotting with a normal?
-- [ ] Zero-length guard on `Length`, not `Unit == null` or `Angle`?
-- [ ] Orientation facts include an asymmetric face?
-- [ ] Closure as "closes at some tolerance ≤ T"?
-- [ ] Sub-tolerance corners removed before `Triangulate`?
-- [ ] Grouping hash keys rounded, ordinates mixed sequentially, buckets histogrammed?
-- [ ] Point sweeps through `PolygonalFace2DPointRelationSolver`, coordinates flattened in hot loops?
+## 7. Checklist → the `## Checklist` at the top of this file

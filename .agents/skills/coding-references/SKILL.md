@@ -1,6 +1,6 @@
 ---
 name: coding-references
-description: "Use when comparing, matching, keying or de-duplicating an IReference/IUniqueReference - == between two interface-typed references is a silent reference comparison, use Core.Query.Equals, accessors clone per call, and how to detect and fix existing occurrences."
+description: "Use when comparing, matching, keying or de-duplicating an IReference/IUniqueReference - == on interfaces is a silent reference comparison, use Core.Query.Equals."
 ---
 
 # AI Guidelines: References (`IReference` / `IUniqueReference`)

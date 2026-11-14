@@ -1,6 +1,6 @@
 ---
 name: github-branches-and-commits
-description: "Use before the first edit and before every commit in a DiGi repository - commit on the active version branch (no branch, worktree or PR unless asked), git branch --show-current and git pull --ff-only, the pre-commit sweep that keeps plan/scratch *.md out, push only when asked, deleting the plan when its issue closes, pulling every repo to its highest SemVer branch; the version bump / release workflow runs ONLY on an explicit user request."
+description: "Use before the first edit and before every commit - commit on the active version branch (no branch, worktree or PR unless asked), pre-commit sweep, push only when asked, plan files, release bump only on explicit request."
 ---
 
 # AI Guidelines: Branches and Commits

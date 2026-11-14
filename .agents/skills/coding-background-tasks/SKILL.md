@@ -1,6 +1,6 @@
 ---
 name: coding-background-tasks
-description: "Use when writing or changing a tray-application background task (DiGi.GIS.PostgreSQL.UI) - PostgreSQL<X>Task : ReportableBackgroundTask<long>, options property named after its type, an Error log before every return false, progress and cancellation, the UI<Task> wrapper showing its options window inside Dispatcher.Invoke on a copy, registration in Create.VisualBackgroundTasks, client <Type>sPostTask uploads with CountyIds."
+description: "Use when writing a tray-application background task (DiGi.GIS.PostgreSQL.UI) - ReportableBackgroundTask<long>, Error log before return false, UI<Task> dialogs on a copy, Create.VisualBackgroundTasks registration, post tasks."
 ---
 
 # AI Guidelines: Background Tasks (server tasks, tray wrappers, post tasks)

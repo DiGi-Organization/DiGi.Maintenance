@@ -1,6 +1,6 @@
 ---
 name: coding-performance
-description: "Use when optimizing code or measuring it - no caching unless the request allows it, benchmark facts measured in isolation (in-suite figures are not comparable), warm-up and ranges, A/B against a real baseline with both sides on the intended binary (Debug/Release, harness dll copies, cp/mv mtimes), parity tests bounded by a percentile plus an invariant, and the wiki Benchmark.md page format."
+description: "Use when optimizing or measuring code - no caching unless allowed, isolated benchmark facts with warm-up, A/B on the intended binary, parity tests, the wiki Benchmark.md page."
 ---
 
 # AI Guidelines: Performance — Optimizing, Benchmarks, Parity, Publishing Figures

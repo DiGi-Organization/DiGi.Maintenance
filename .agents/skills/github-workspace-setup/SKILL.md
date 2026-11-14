@@ -1,6 +1,6 @@
 ---
 name: github-workspace-setup
-description: "Use when setting up a new machine or changing the local GitHub folder layout - one folder per owner (DiGi, DigiProject, ZiolkowskiJakub), SetupWorkspace.ps1, restoring user files/ (CopyUserFiles.ps1 -Reverse), AI-app root files, migrating from the pre-2026-10-14 layout, the WIKI_SYNC_PAT organization secret."
+description: "Use when setting up a new machine or changing the local folder layout - one folder per owner, SetupWorkspace.ps1, restoring user files, AI-app root files, WIKI_SYNC_PAT."
 ---
 
 # GitHub - Workspace Setup

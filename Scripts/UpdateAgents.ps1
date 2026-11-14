@@ -12,8 +12,10 @@
        ending and BOM. 'files/README - Coding Guidelines.md' is hand-written: the run fails when it does not name
        every guideline file.
     2. Copies 'DiGi.Maintenance/.agents/AGENTS.md' into every 'DiGi.*' repository.
-    3. Turns every guideline (except README.md) into '.agents/skills/<skill-name>/SKILL.md' with YAML frontmatter;
-       its 'Evidence/<same name>.md', when present, is copied beside it as 'evidence.md' and the links follow.
+    3. Turns every guideline (except README.md) into '.agents/skills/<skill-name>/SKILL.md' with YAML frontmatter.
+       A guideline opening with '## Checklist' becomes a small SKILL.md (introduction + checklist) plus the whole
+       text as 'guideline.md' beside it; its 'Evidence/<same name>.md', when present, is copied as 'evidence.md'
+       and the links follow.
     4. Copies every workflow skill 'DiGi.Maintenance/files/skills/<name>/SKILL.md' into '.agents/skills/<name>' of
        every repository and into the workspace '.claude/skills/<name>' (Claude Code).
     5. Optionally refreshes an external, machine-global AGENTS.md whose path is configured as
@@ -286,6 +288,27 @@ foreach ($workflowSkill in $workflowSkills) {
     Write-TextFile -Path (Join-Path $claudeSkillFolder "SKILL.md") -Text ([System.IO.File]::ReadAllText((Join-Path $workflowSkill.FullName "SKILL.md")))
 }
 
+# Search tools built on ripgrep honour a '.ignore' file: without it every phrase of a guideline is found once per
+# repository (its generated '.agents' copy). The copies of DiGi.Maintenance stay searchable; the source always is.
+$ignoreFile = Join-Path $baseDir ".ignore"
+$ignoreLines = @(
+    "# Generated copies of the AI Guidelines (source: DiGi.Maintenance/documentation/AI Guidelines) - written by UpdateAgents.ps1",
+    "/DiGi.*/.agents/",
+    "!/DiGi.Maintenance/.agents/",
+    "/templates/*/.agents/"
+)
+$ignoreText = ""
+if (Test-Path $ignoreFile) {
+    $ignoreText = [System.IO.File]::ReadAllText($ignoreFile) -replace "`r", ""
+}
+if (-not $ignoreText.Contains("/DiGi.*/.agents/")) {
+    if ($ignoreText -ne "" -and -not $ignoreText.EndsWith("`n")) {
+        $ignoreText += "`n"
+    }
+    [System.IO.File]::WriteAllText($ignoreFile, $ignoreText + ($ignoreLines -join "`n") + "`n", (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "Updated search ignore file: $ignoreFile" -ForegroundColor Cyan
+}
+
 # Refresh the external machine-global AGENTS.md, if one is configured
 $confPath = Join-Path $PSScriptRoot "..\user files\Directories.conf"
 $globalAgentsPath = ""
@@ -377,8 +400,25 @@ foreach ($dir in $targetDirectories) {
         $yamlQuote = [string][char]34
         # Escape for a double-quoted YAML scalar: double every backslash, then prefix every quote with one backslash.
         $yamlDescription = $description.Replace($yamlBackslash, $yamlBackslash + $yamlBackslash).Replace($yamlQuote, $yamlBackslash + $yamlQuote)
-        $skillText = "---`nname: $skillName`ndescription: `"$yamlDescription`"`n---`n`n" + $guidelineText
-        Write-TextFile -Path (Join-Path $skillFolder "SKILL.md") -Text $skillText
+        $frontmatter = "---`nname: $skillName`ndescription: `"$yamlDescription`"`n---`n`n"
+
+        # A guideline that opens with '## Checklist' ships as a small SKILL.md (introduction + checklist) and the whole
+        # guideline beside it as 'guideline.md': a skill body loads whole, so the sections are read on demand.
+        $normalizedGuidelineText = $guidelineText -replace "`r", ""
+        $checklistIndex = $normalizedGuidelineText.IndexOf("`n## Checklist`n")
+        $sectionMatch = $null
+        if ($checklistIndex -ge 0) {
+            $sectionMatch = [regex]::Match($normalizedGuidelineText.Substring($checklistIndex + 1), '(?m)^## \d')
+        }
+
+        if ($null -ne $sectionMatch -and $sectionMatch.Success) {
+            $skillBody = $normalizedGuidelineText.Substring(0, $checklistIndex + 1 + $sectionMatch.Index).TrimEnd("`n")
+            $skillBody += "`n`n**Sections (rules in full, code, traps):** [guideline.md](guideline.md) - before changing code a checklist line covers, read the section it names.`n"
+            Write-TextFile -Path (Join-Path $skillFolder "SKILL.md") -Text ($frontmatter + $skillBody)
+            Write-TextFile -Path (Join-Path $skillFolder "guideline.md") -Text $normalizedGuidelineText
+        } else {
+            Write-TextFile -Path (Join-Path $skillFolder "SKILL.md") -Text ($frontmatter + $guidelineText)
+        }
     }
 
     foreach ($workflowSkill in $workflowSkills) {

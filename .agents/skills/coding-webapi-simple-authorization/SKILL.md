@@ -1,6 +1,6 @@
 ---
 name: coding-webapi-simple-authorization
-description: "Use when implementing or auditing API-key tiered authorization on a WebAPI - deny by default, [Feature]Configuration with an Open escape hatch, fail-closed factory, constant-time IsAuthorized, the key in a request header, singleton registration, a second gate indistinguishable from the first, what a .NET 7+ WebApplication inserts ([Authorize] without a scheme answers 500), committed defaults vs secrets, deny-branch facts."
+description: "Use when implementing or auditing API-key tiered authorization on a WebAPI - deny by default, key header, constant-time compare, fail-closed factory, what the host authentication pipeline inserts."
 ---
 
 # Coding — WebAPI Simple Authorization (Tiered Access & API Key)

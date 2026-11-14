@@ -1,6 +1,6 @@
 ---
 name: coding-browser-testing
-description: "Use when verifying interactive front-end behaviour in a real browser - Playwright (Python) driving an installed Chromium browser to test toggles, drag-resize clamps, keyboard, localStorage, responsive and phone (375x812) layouts, and rendered output by screenshot statistics and GPU timer queries rather than state flags; the hidden attribute losing to a display rule. Confirm the toolchain on this machine first; run with the host shell, never a sandbox."
+description: "Use when verifying interactive front-end behaviour in a real browser - Playwright, toggles, drag-resize, keyboard, localStorage, phone layouts, rendered output by screenshot statistics; host shell only."
 ---
 
 # AI Guidelines: Browser Testing (Interactive DoD)

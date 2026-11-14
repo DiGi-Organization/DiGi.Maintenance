@@ -7,6 +7,15 @@ Laya is not generative: one forward pass answers typed questions (`choice`, `sco
 > `DeployLaya.ps1` from an allowlist, and the Python environment is created on each host outside the synced software
 > directory.**
 
+## Checklist
+Read this first; open a section only when its line applies to the change.
+- Released checkpoints outside the workspace, nothing added inside after training?
+- Fine-tuned **and** calibrated on the consumer's data, beating zero-shot and the deterministic baseline held-out?
+- Deploy prints `skipped (unchanged)` for untouched models and nothing unexpected under `Not deployed:`?
+- Host conf names the venv `python.exe`, the model folder and its calibration file; preflight passes?
+- Venv outside the synced software directory?
+- Host-reported `ModelSHA256` = manifest `directorySHA256` = the training record?
+
 ## 1. Components
 | Repository | Role |
 |---|---|
@@ -88,11 +97,3 @@ A release is a folder plus an optional side file in `LAYA_MODELS_DIRECTORY` (`us
   done, so its limit covers the whole calibration.
 - Two runs never share a `WorkingDirectory` (`null` = a temporary one).
 - Measure latency on the host that runs it; GPU inference on the database server is out of scope.
-
-## Checklist
-- [ ] Released checkpoints outside the workspace, nothing added inside after training?
-- [ ] Fine-tuned **and** calibrated on the consumer's data, beating zero-shot and the deterministic baseline held-out?
-- [ ] Deploy prints `skipped (unchanged)` for untouched models and nothing unexpected under `Not deployed:`?
-- [ ] Host conf names the venv `python.exe`, the model folder and its calibration file; preflight passes?
-- [ ] Venv outside the synced software directory?
-- [ ] Host-reported `ModelSHA256` = manifest `directorySHA256` = the training record?

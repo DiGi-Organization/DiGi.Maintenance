@@ -1,6 +1,6 @@
 ---
 name: github-wiki
-description: "Use when editing a GitHub wiki page or a wiki Home.md - wiki clones under DiGi/wiki/ on master, generated API pages never hand-edited, the CI sync, linking every page from Home, the five Home blocks and the SyncWiki.ps1 parser rules."
+description: "Use when editing a GitHub wiki page or Home.md - wiki clones under DiGi/wiki, generated API pages never hand-edited, linking every page from Home, SyncWiki.ps1 parser rules."
 ---
 
 # AI Guidelines: GitHub Wiki Pages

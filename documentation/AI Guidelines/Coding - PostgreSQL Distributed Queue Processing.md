@@ -6,6 +6,22 @@ claim), `AcknowledgeBuilding2DReferencesAsync`, `GetQueueSummariesByCountyIdsAsy
 `nextbuilding2dreferences` / `acknowledgebuilding2dreferences` / `queuesummariesbycountyids` actions of
 `OrtoDatasController`. **When this document and that code disagree, the code is the current state — fix the document.**
 
+## Checklist
+Read this first; open a section only when its line applies to the change.
+- Schema has `claimed_at timestamptz` and `attempts INT NOT NULL DEFAULT 0`, each with its `ADD COLUMN IF NOT EXISTS`?
+- Enqueue, claim and acknowledge run the DDL, not an existence check?
+- `UNIQUE (county_id, reference)` with `county_id` a county **part** id?
+- Claim index `(claimed_at ASC NULLS FIRST, created_at ASC)` and a claim ordered the same way?
+- Claim uses `FOR UPDATE SKIP LOCKED`, native interval multiplication, increments `attempts`, parenthesised lease condition before the ceiling?
+- Claim method takes `count`, `claimTimeoutMinutes`, `maxAttempts`, `commandTimeout`, token; controller binds `maxattempts`?
+- `claimTimeoutMinutes` above the worst-case batch time?
+- Acknowledge by `id = ANY(@ids)`, idempotent target or owner-checked on `claimed_at`?
+- Re-enqueue during a claim covered (`DO NOTHING`) or reset (`DO UPDATE`), documented on the producer?
+- Retirement before the claim, every retired reference logged at Error?
+- Acknowledgment only after the storage write succeeded?
+- Read-only observation reports attempted rows; completeness measured on the target per county part?
+- XML documentation on every public method and endpoint?
+
 ## 1. Lifecycle — claim/acknowledge, never a destructive drain
 A queue read with `DELETE … RETURNING` loses work whenever a worker crashes, times out or fails downstream, and cannot be
 observed without draining it. Every DiGi queue instead runs four stages:
@@ -158,17 +174,4 @@ county in either request.
   }
   ```
 
-## 7. Checklist
-- [ ] Schema has `claimed_at timestamptz` and `attempts INT NOT NULL DEFAULT 0`, each with its `ADD COLUMN IF NOT EXISTS`?
-- [ ] Enqueue, claim and acknowledge run the DDL, not an existence check?
-- [ ] `UNIQUE (county_id, reference)` with `county_id` a county **part** id?
-- [ ] Claim index `(claimed_at ASC NULLS FIRST, created_at ASC)` and a claim ordered the same way?
-- [ ] Claim uses `FOR UPDATE SKIP LOCKED`, native interval multiplication, increments `attempts`, parenthesised lease condition before the ceiling?
-- [ ] Claim method takes `count`, `claimTimeoutMinutes`, `maxAttempts`, `commandTimeout`, token; controller binds `maxattempts`?
-- [ ] `claimTimeoutMinutes` above the worst-case batch time?
-- [ ] Acknowledge by `id = ANY(@ids)`, idempotent target or owner-checked on `claimed_at`?
-- [ ] Re-enqueue during a claim covered (`DO NOTHING`) or reset (`DO UPDATE`), documented on the producer?
-- [ ] Retirement before the claim, every retired reference logged at Error?
-- [ ] Acknowledgment only after the storage write succeeded?
-- [ ] Read-only observation reports attempted rows; completeness measured on the target per county part?
-- [ ] XML documentation on every public method and endpoint?
+## 7. Checklist → the `## Checklist` at the top of this file

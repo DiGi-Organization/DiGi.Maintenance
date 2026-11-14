@@ -6,6 +6,19 @@
 code to "the" county picks one, and everything filed under the others reads back `404`/`204` with no error.
 Evidence: [DiGi.GIS.PostgreSQL#1](https://github.com/DiGi-Organization/DiGi.GIS.PostgreSQL/issues/1).
 
+## Checklist
+Read this first; open a section only when its line applies to the change (§4 is the situation → action table).
+- Key by county `id`; iterating counties iterates **parts** (406, not 380); never deduplicate the parts (§1, §4).
+- Any `LIMIT`/`FirstOrDefault` over `administrative_areal_2d` or `building_2d` has an explicit `ORDER BY id ASC` (§2).
+- A `reference` is unique only per `county_id`; everything keyed on a building inherits its part and filters `county_id` first (§3).
+- Uploads: POST `updateitemsbycountyids` with a repeated `countyids` parameter, each item resolved through `Query.CountyIdsByReferencesAsync` — whatever number of ids arrived (§4).
+- Reads of a building-keyed table pass `fallbackByReference: true` by name; a background post task sets `CountyIds` (plural) (§4).
+- A spatial read pruned to `county_id = ANY(...)` prunes by every sibling part (`Query.SiblingCountyGroups`) (§4).
+- A `building_data` fill rate is not usable data — compare distributions (§4). PRG address points are never keyed by code (§4).
+- Is a code ambiguous: `GetIdsByCodeAsync` (every part), not `GetIdByCodeAsync` (§4); live re-checks (§5).
+- `AdministrativeArealType` goes as an integer; `AdministrativeAreal2DReference.CountyId` is the parent county (§6).
+- Subdivisions nest: `building_2d.subdivision_id` is the smallest containing one; buildings of an area come from its polygon, never a sum over subdivisions; figures roll up top-level only (§7).
+
 ## 1. How the data is stored
 **Source:** Geoportal BDOT10k `Polska_GML.zip` → `BDOT10k/<voivodeship>_GML.zip` (16) → `<countyCode>_GML.zip` (380, codes
 unique) → `PL.PZGiK.<n>.<code>/BDOT10k/…__OT_ADJA_A.xml` (administrative units, `rodzaj` = `państwo` / `województwo` /

@@ -1,6 +1,6 @@
 ---
 name: github-sub-issues
-description: "Use when creating sub-issues or sub-tasks for a feature - the tracking-issue pattern: a parent with the shared spec, a Sub-issues table in dependency order and end-to-end acceptance, one self-contained sub-issue per repository opening with its Context sentence, sibling order as blocked_by dependencies (canonical example DiGi.GIS.PostgreSQL #83)."
+description: "Use when splitting a feature into sub-issues - a tracking issue with the shared spec plus one self-contained sub-issue per repository, sibling order as blocked_by."
 ---
 
 # AI Guidelines: GitHub Sub-Issues (Tracking-Issue Pattern)

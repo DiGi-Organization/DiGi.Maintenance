@@ -1,6 +1,6 @@
 ---
 name: github-labels
-description: "Use when applying or syncing GitHub labels or choosing an issue's mandatory 'ai: *' tier - the 21-label Type/Priority/Status/AI taxonomy, Type + Priority + one ai tier on every new issue, open issues only by default, the tier criteria and capability bands (err higher for core abstractions), SyncLabelsAllRepos.ps1."
+description: "Use when applying or syncing GitHub labels or choosing an issue's mandatory 'ai: *' tier - the 21-label taxonomy, tier criteria, SyncLabelsAllRepos.ps1."
 ---
 
 # AI Guidelines: GitHub Labels & AI Complexity Tier

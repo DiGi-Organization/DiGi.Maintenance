@@ -4,6 +4,15 @@
 > scratch live in a training directory outside the workspace, and the runner extension is deployed from an allowlist —
 > never a blocklist.**
 
+## Checklist
+Read this first; open a section only when its line applies to the change.
+- `user files/` holds only the conf, prediction options and `model.pt`?
+- Training/labelling options name an absolute `ScratchDirectory` and absolute inputs in the training directory?
+- New imagery-writing code uses bounded chunk folders, never one flat per-county folder?
+- After a deploy: ~212 files / 268 MB, `scratch*`, `logs`, `reports` under `Not deployed:`, no warning?
+- New detector: `model.pt` replaced, old weights kept in the training directory, SHA-256 on the issue, year built
+      re-measured with `YearBuiltPredictionEvaluationConsoleApp`?
+
 ## 1. Components
 | Repository / project | Role |
 |---|---|
@@ -104,11 +113,3 @@ tray (`Coding - Host Dependencies.md` §4).
   until added to `Test-DeployableDirectory`/`IncludePath` — `Not deployed:` shows it.
 - **The runner declares its NuGet closure itself** (`DiGi.GIS.YOLO.UI.ConsoleApp.csproj`) — only packages actually loaded:
   stale `TorchSharp`/`OneDal` once shipped ~1.6 GB of native runtimes. Verify with `CheckHostDependencies.ps1`.
-
-## Checklist
-- [ ] `user files/` holds only the conf, prediction options and `model.pt`?
-- [ ] Training/labelling options name an absolute `ScratchDirectory` and absolute inputs in the training directory?
-- [ ] New imagery-writing code uses bounded chunk folders, never one flat per-county folder?
-- [ ] After a deploy: ~212 files / 268 MB, `scratch*`, `logs`, `reports` under `Not deployed:`, no warning?
-- [ ] New detector: `model.pt` replaced, old weights kept in the training directory, SHA-256 on the issue, year built
-      re-measured with `YearBuiltPredictionEvaluationConsoleApp`?

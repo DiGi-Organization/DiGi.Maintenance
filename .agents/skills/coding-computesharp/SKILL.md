@@ -1,6 +1,6 @@
 ---
 name: coding-computesharp
-description: "Use when writing or changing a ComputeSharp IComputeShader (DiGi.ComputeSharp) - constant buffer layout (12-byte header, free slot at offset 12, declaration order is layout order), the NVIDIA defect where an odd root constant count with an odd resource count silently corrupts doubles (reorder or pad, never drop a resource), the layout guard and parity facts, GPU fact conventions, probing a suspected driver defect."
+description: "Use when writing or changing a ComputeSharp IComputeShader - constant buffer layout, odd root constants with odd resources corrupt doubles on NVIDIA, layout guard and parity facts."
 ---
 
 # AI Guidelines: ComputeSharp Compute Shaders

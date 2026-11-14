@@ -3,6 +3,15 @@
 ASP.NET Core Web APIs on the `DiGi.GLTF` 3D framework (engine `DiGi.GLTF.WebAPI`, consumer `DiGi.GIS.WebAPI.UI`). Scaffold
 from `DiGi.WebAPI.GLTF.Template` (`Coding - Project Setup.md` §1).
 
+## Checklist
+Read this first; open a section only when its line applies to the change.
+- Solution folder under the workspace root; references `DiGi.Core`, `DiGi.Geometry`, `DiGi.GLTF`, `NetTopologySuite`, `SharpGLTF.Toolkit`?
+- `DiGi.GLTF.Modify.Register(typeof(Program).Assembly)`; response compression for `model/gltf-binary`?
+- New types via `IGLTFNodeConverter` in the consumer, emitting WORLD coordinates?
+- `ToSystem_Bytes(scene, batched: true)`?
+- `gltf-viewer-core.js` edited only in `DiGi.GLTF.WebAPI`, synced and committed in both repositories?
+- Marquee selection live in both directions; nothing reads payload normals; `shadowSide` pinned when `side` changes?
+
 ## 1. Pipeline
 1. **Input (consumer):** `ISerializableObject`s (e.g. `Building2D`).
 2. **Conversion (consumer):** `IGLTFNodeConverter`s turn them into `GLTFNode`s in **WORLD coordinates**; registered at
@@ -113,10 +122,4 @@ public class MyDomainObjectGLTFNodeConverter : GLTFNodeConverter<MyDomainObject>
   `pointermove`, re-tints only the difference (`applyHighlight(id, SELECTED_TINT)`) and dispatches `gltf-selectionchanged`
   only on release. A view with its own selection code must match it.
 
-## 6. Checklist
-- [ ] Solution folder under the workspace root; references `DiGi.Core`, `DiGi.Geometry`, `DiGi.GLTF`, `NetTopologySuite`, `SharpGLTF.Toolkit`?
-- [ ] `DiGi.GLTF.Modify.Register(typeof(Program).Assembly)`; response compression for `model/gltf-binary`?
-- [ ] New types via `IGLTFNodeConverter` in the consumer, emitting WORLD coordinates?
-- [ ] `ToSystem_Bytes(scene, batched: true)`?
-- [ ] `gltf-viewer-core.js` edited only in `DiGi.GLTF.WebAPI`, synced and committed in both repositories?
-- [ ] Marquee selection live in both directions; nothing reads payload normals; `shadowSide` pinned when `side` changes?
+## 6. Checklist → the `## Checklist` at the top of this file
