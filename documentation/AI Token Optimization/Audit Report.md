@@ -33,9 +33,9 @@ Findings that are not costs but were surfaced by the audit:
 
 | Target | Before | After | Note |
 |---|---|---|---|
-| OpenCode always-loaded | 35 583 | 25 207 (−29 %) | one instruction file; descriptions 14 284 → 8 725 incl. 5 workflow skills |
+| OpenCode always-loaded | 35 583 | 21 043 (−41 %) | one instruction file (the slimmed `CLAUDE.md`); descriptions 14 284 → 8 725 incl. 5 workflow skills |
 | Generic always-loaded | 20 311 | 17 933 (−12 %) | shorter descriptions; `AGENTS.md` gained the script and reading-protocol lines |
-| Claude Code always-loaded | 15 272 | 17 567 (+15 %) | reading protocol, script list and 5 skill descriptions added; **the slimmed `CLAUDE.md` (12 318 → about 13 400 with skills, −12 %) is proposed, not applied** — §4 |
+| Claude Code always-loaded | 15 272 | 13 403 (−12 %) | slimmed `CLAUDE.md` (12 318) with the reading protocol and script list, plus 5 workflow-skill descriptions (1 085) |
 | First read of a large guideline (17 files) | 210 876 whole | 34 139 checklists (−84 %) | a section is read on demand; the files themselves grew 8 % (273 736 → 296 512) |
 | Search hits for a guideline phrase | 75 | 4 | workspace-root `.ignore` |
 | Lists of guidelines kept by hand | 5 | 1 manifest + 1 coverage-checked README block | `Guidelines.json` |
@@ -56,15 +56,15 @@ The "first read" row is the dominant per-task saving: a task routed to `Coding -
 - Checklist lines state the rule itself, so an agent that reads only the checklist still has every rule; the section
   adds the why, the symptom, the code and the detection recipe.
 
-## 4. Open decisions
-1. **Slim `CLAUDE.md`** — a proposal is at `user files/reports/CLAUDE.proposed.md` (12.3 KB against 16.5 KB now; the
-   pre-change file is saved beside it). It keeps every always-apply C# rule and every silent trap as one line with its
-   guideline, and drops the paragraphs that restate a routed guideline (serialization, tests, browser testing, XML
-   documentation). The 9 KB target of the plan is not reachable without cutting routing trigger words — the generated
-   routing table alone is 5.6 KB. It changes what every session knows unprompted, so it is yours to approve.
-2. **Regenerate the 72 repositories** (`UpdateAgents.ps1`, one commit per repository, no push). Until then only
-   `DiGi.Maintenance/.agents` carries the checklist-first skills.
-3. **Wire `DIGI0001` into the repositories** and port the text checks of `CheckGuidelineRules.ps1` to Roslyn — with
+## 4. Decisions
+1. **Slimmed `CLAUDE.md` — applied 2026-11-14** (12.3 KB; the original and the intermediate version are saved under
+   `user files/reports/`). It keeps every always-apply C# rule and every silent trap as one line with its guideline, and
+   drops the paragraphs that restated a routed guideline (serialization, tests, browser testing, XML documentation) —
+   those details now arrive with the guideline's Checklist. The 9 KB target of the plan was not reachable without
+   cutting routing trigger words: the generated routing table alone is 5.6 KB.
+2. **The 72 repositories were regenerated 2026-11-14** (`UpdateAgents.ps1`, one local commit per repository, `.agents`
+   only, not pushed).
+3. **Open — wire `DIGI0001` into the repositories** and port the text checks of `CheckGuidelineRules.ps1` to Roslyn — with
    `TreatWarningsAsErrors` this can break builds, so it needs its own issue.
 4. **The README "Coding Guidelines" block** (about 13 KB in each of 72 READMEs) was left as it is, by decision.
 
@@ -73,4 +73,5 @@ The "first read" row is the dominant per-task saving: a task routed to `Coding -
   (10.7 KB) and `Coding - WebAPI Simple Authorization.md` (10.5 KB) still load whole, as do the 12 files under 7 KB
   (a checklist there would only add bytes).
 - Evidence was split out for `Coding - General.md` and the propagation guideline only (see §1, first finding).
-- The end-to-end spot check of the plan (one real C# task under the slimmed `CLAUDE.md`) waits for decision 1.
+- The end-to-end spot check of the plan (one real C# task under the slimmed `CLAUDE.md`) has not been run; watch the
+  first sessions for a rule that was followed before and is missed now, and restore its line if so.
