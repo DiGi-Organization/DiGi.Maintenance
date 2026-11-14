@@ -1,0 +1,192 @@
+{
+  "categories": ["Coding", "Documentation", "GitHub & Wiki", "Maintenance"],
+  "guidelines": [
+    {
+      "file": "Coding - General.md",
+      "category": "Coding",
+      "description": "Use when writing or editing any C# - no var, type-prefixed naming, parameter line breaks, CancellationToken last, Query/Modify/Create/Convert, cheap constructors, enums, constants, files vs user files, logging, cancellation filter, TODO [Marker], binding traps.",
+      "route": "Write or modify C# — naming, architecture, enums, constants, assets, logging, cancellation, `TODO [Marker]`, binding traps"
+    },
+    {
+      "file": "Coding - Serialization.md",
+      "category": "Coding",
+      "description": "Use when creating or changing a SerializableObject or *Options type, or debugging a JSON round trip - three constructors, [JsonInclude] fields, DateTimeOffset, serializer traps, SerializationCheck plus copy-constructor facts.",
+      "route": "Create/change a `SerializableObject` or `*Options` type, debug a JSON round trip, write its `SerializationCheck` fact"
+    },
+    {
+      "file": "Coding - Host Dependencies.md",
+      "category": "Coding",
+      "description": "Use when adding a NuGet package, when a host throws FileNotFoundException or returns a partial result, or on CS0012/CS0246 walls - HintPath drops transitive packages, stale deps.json, CheckHostDependencies.ps1, rebuilding consumers.",
+      "route": "Add a NuGet package; a host's `FileNotFoundException` / partial result; `CS0012`/`CS0246` walls; stale `deps.json`; `--no-incremental` deleting `DiGi.Core\\bin`; after changing a public surface"
+    },
+    {
+      "file": "Coding - Project Setup.md",
+      "category": "Coding",
+      "description": "Use when creating a project or repository from templates/ or changing build configuration - .gitignore, Directory.Build.props, analyzers and suppressions, .editorconfig overrides only under [*.cs], DIGI0001.",
+      "route": "New project/repository from `templates/`, `.editorconfig` (an override above the first `[section]` applies to nothing), `Directory.Build.props`, analyzers"
+    },
+    {
+      "file": "Coding - Automatic Tests.md",
+      "category": "Coding",
+      "description": "Use when writing xUnit facts - Facts layout, fixtures in DiGi.Test/files, build the library before dotnet test, Short/Medium/Long attributes, reproduce-first, guards that can fail, database facts on *_Test.conf.",
+      "route": "Write xUnit facts; classify Short/Medium/Long (`[MediumFact]`, `[LongFact]`, `DIGI_TEST_MAX_DURATION`)"
+    },
+    {
+      "file": "Coding - Performance.md",
+      "category": "Coding",
+      "description": "Use when optimizing or measuring code - no caching unless allowed, isolated benchmark facts with warm-up, A/B on the intended binary, parity tests, the wiki Benchmark.md page.",
+      "route": "Optimize code, benchmark/parity facts, the wiki `Benchmark.md` page"
+    },
+    {
+      "file": "Coding - References.md",
+      "category": "Coding",
+      "description": "Use when comparing, matching, keying or de-duplicating an IReference/IUniqueReference - == on interfaces is a silent reference comparison, use Core.Query.Equals.",
+      "route": "Compare/match/key an `IReference`/`IUniqueReference`"
+    },
+    {
+      "file": "Coding - Geometry.md",
+      "category": "Coding",
+      "description": "Use when orienting, closing, triangulating, hashing or sweeping DiGi.Geometry/DiGi.Solar geometry - SunDirection points away from the sun, Vector3D.Unit never null, IsClosed not monotonic, sub-tolerance corners, hash keys.",
+      "route": "Orient, close, triangulate, hash or sweep geometry (`SunDirection`, `Vector3D.Unit`, `IsClosed`, `Triangulate`)"
+    },
+    {
+      "file": "Coding - ComputeSharp.md",
+      "category": "Coding",
+      "description": "Use when writing or changing a ComputeSharp IComputeShader - constant buffer layout, odd root constants with odd resources corrupt doubles on NVIDIA, layout guard and parity facts.",
+      "route": "Write or change a ComputeSharp `IComputeShader` (odd root constants + odd resources defect, layout guard fact)"
+    },
+    {
+      "file": "Coding - Grasshopper.md",
+      "category": "Coding",
+      "description": "Use when writing a Grasshopper/Rhino component (DiGi.*.Rhino) - fixed ComponentGuid, name-based parameter lookup, Goo/Param pairs, Inspect, .gha project setup.",
+      "route": "Grasshopper/Rhino components, Goo/Param pairs, `Inspect`, `.gha` projects"
+    },
+    {
+      "file": "Coding - Background Tasks.md",
+      "category": "Coding",
+      "description": "Use when writing a tray-application background task (DiGi.GIS.PostgreSQL.UI) - ReportableBackgroundTask<long>, Error log before return false, UI<Task> dialogs on a copy, Create.VisualBackgroundTasks registration, post tasks.",
+      "route": "Tray-application background tasks, `UI<Task>` dialogs, `VisualBackgroundTasks` registration, post tasks"
+    },
+    {
+      "file": "Coding - WPF Deferred Loading.md",
+      "category": "Coding",
+      "description": "Use when a WPF window or dialog needs slow data, or when checking WPF layout without its host - open at once, background read, progress bar, cancel on Closed, null means unknown, STA facts, off-screen render harness.",
+      "route": "WPF window/dialog needing slow data (deferred loading, STA facts) or WPF layout checks without the host"
+    },
+    {
+      "file": "Coding - YOLO.md",
+      "category": "Coding",
+      "description": "Use when working on the YOLO Year Built detector - model.pt resolution and SHA-256, training data and scratch outside the workspace, chunked scratch, allowlisted runner deploy.",
+      "route": "YOLO Year Built detector — `model.pt`, `ScratchDirectory`, training data placement, runner deploy allowlist"
+    },
+    {
+      "file": "Coding - Laya.md",
+      "category": "Coding",
+      "description": "Use when working on the Laya decision model - checkpoint identity by DirectorySHA256, fine-tune and calibrate, LAYA_MODELS_DIRECTORY and DeployLaya.ps1, host venv outside the synced directory.",
+      "route": "Laya model — checkpoint SHA-256, fine-tune + calibrate, `LAYA_MODELS_DIRECTORY`/`DeployLaya.ps1`, host venv"
+    },
+    {
+      "file": "Coding - WebAPI GLTF.md",
+      "category": "Coding",
+      "description": "Use when building a Web API on the DiGi.GLTF 3D framework - IGLTFNodeConverter in WORLD coordinates, batched payloads, gltf-viewer-core.js edited only in its owner, what the payload does not carry.",
+      "route": "WebAPI on the `DiGi.GLTF` 3D framework"
+    },
+    {
+      "file": "Coding - WebAPI Contracts.md",
+      "category": "Coding",
+      "description": "Use when changing a WebAPI route, parameter, controller or extension, or writing its HTTP client - silent parameter renames, omitted parameters, enums on the wire, failure statuses never read as empty, timeouts, one public constructor, Content(...) not Ok(x).",
+      "route": "Change a WebAPI route/parameter/controller, write an HTTP client, failure statuses, a new extension"
+    },
+    {
+      "file": "Coding - WebAPI Simple Authorization.md",
+      "category": "Coding",
+      "description": "Use when implementing or auditing API-key tiered authorization on a WebAPI - deny by default, key header, constant-time compare, fail-closed factory, what the host authentication pipeline inserts.",
+      "route": "API-key tiered authorization (deny by default, `key` header), the host's authentication pipeline"
+    },
+    {
+      "file": "Coding - Deployed WebAPI.md",
+      "category": "Coding",
+      "description": "Use when checking a change against api.digiproject.uk or deciding which server runs what - per-prefix Swagger, deployed build lag, sequential querying, cold-partition timeouts, where each log lives. Manual curl only.",
+      "route": "Test against `api.digiproject.uk` — read the per-prefix Swagger (`/swagger/gis/swagger.json`, …), not the full one; which server runs what, where a limit is measured, where a log lives",
+      "routeNote": " (§1 Swagger, §5 topology)"
+    },
+    {
+      "file": "Coding - Browser Testing.md",
+      "category": "Coding",
+      "description": "Use when verifying interactive front-end behaviour in a real browser - Playwright, toggles, drag-resize, keyboard, localStorage, phone layouts, rendered output by screenshot statistics; host shell only.",
+      "route": "Verify a web UI's interactive behaviour or rendered output in a real browser (incl. phone layouts)"
+    },
+    {
+      "file": "Coding - GIS Administrative Data.md",
+      "category": "Coding",
+      "description": "Use when touching administrative_areal_2d, building_2d or anything keyed by a county code or id - a code is not a key (406 parts for 380 counties), fallbackByReference, sibling-part pruning, the Subdivision layer.",
+      "route": "`administrative_areal_2d`, `building_2d`, anything keyed by a county code/id; Subdivision layer"
+    },
+    {
+      "file": "Coding - PostgreSQL.md",
+      "category": "Coding",
+      "description": "Use when writing Npgsql/PostgreSQL code - NULLS NOT DISTINCT keys, batching, forwarded timeouts and tokens, partition pruning, disposal, whitelisted identifiers, production only through the API, *_Test.conf databases.",
+      "route": "PostgreSQL/Npgsql — keys, batching, timeouts, partition pruning, identifiers, production vs `*.conf`, test databases"
+    },
+    {
+      "file": "Coding - PostgreSQL Distributed Queue Processing.md",
+      "category": "Coding",
+      "description": "Use when designing or maintaining a claim/acknowledge update queue in PostgreSQL - FOR UPDATE SKIP LOCKED, attempts and poison-row retirement, lease vs batch time, ownership, observation vs coverage.",
+      "route": "Distributed update queues (claim/acknowledge, `SKIP LOCKED`, `attempts`, ownership, observation vs coverage)"
+    },
+    {
+      "file": "XML Documentation.md",
+      "category": "Documentation",
+      "description": "Use when reading a public API (documentation/API before .cs) or adding or auditing XML doc comments - every public member, params in signature order, one summary, no docs on partial declarations.",
+      "route": "Read generated API docs; add or audit XML doc comments"
+    },
+    {
+      "file": "GitHub - Branches and Commits.md",
+      "category": "GitHub & Wiki",
+      "description": "Use before the first edit and before every commit - commit on the active version branch (no branch, worktree or PR unless asked), pre-commit sweep, push only when asked, plan files, release bump only on explicit request.",
+      "route": "Where to commit (**default: the active version branch — never a new branch, worktree or PR unless asked**), pre-commit plan-file sweep, pulling all repos, release bump (**only on explicit request**)"
+    },
+    {
+      "file": "GitHub - Issues.md",
+      "category": "GitHub & Wiki",
+      "description": "Use when creating, editing, commenting on, filtering or closing GitHub issues - --body-file encoding traps, mandatory labels and assignee ZiolkowskiJakub, verifying premises, resolution comments, FilterIssues.ps1, blocked_by dependencies.",
+      "route": "Create/filter/comment/close issues (`FilterIssues.ps1`; verify premises; mandatory Type + Priority + `ai:` labels and assignee `ZiolkowskiJakub`; **blocking = issue dependencies**, verified with the `blocking` GET; a blocked issue is not started)"
+    },
+    {
+      "file": "GitHub - Labels.md",
+      "category": "GitHub & Wiki",
+      "description": "Use when applying or syncing GitHub labels or choosing an issue's mandatory 'ai: *' tier - the 21-label taxonomy, tier criteria, SyncLabelsAllRepos.ps1.",
+      "route": "Labels and the mandatory `ai: *` tier (open issues only by default)"
+    },
+    {
+      "file": "GitHub - Sub-Issues.md",
+      "category": "GitHub & Wiki",
+      "description": "Use when splitting a feature into sub-issues - a tracking issue with the shared spec plus one self-contained sub-issue per repository, sibling order as blocked_by.",
+      "route": "Sub-issues for a feature (tracking issue + one per repository, sibling order as `blocked_by`)"
+    },
+    {
+      "file": "GitHub - Workspace Setup.md",
+      "category": "GitHub & Wiki",
+      "description": "Use when setting up a new machine or changing the local folder layout - one folder per owner, SetupWorkspace.ps1, restoring user files, AI-app root files, WIKI_SYNC_PAT.",
+      "route": "Workspace layout, new machine, cloning/`origin` fixes (`SetupWorkspace.ps1`), `WIKI_SYNC_PAT`"
+    },
+    {
+      "file": "GitHub Wiki.md",
+      "category": "GitHub & Wiki",
+      "description": "Use when editing a GitHub wiki page or Home.md - wiki clones under DiGi/wiki, generated API pages never hand-edited, linking every page from Home, SyncWiki.ps1 parser rules.",
+      "route": "Edit a GitHub wiki page or `Home.md`"
+    },
+    {
+      "file": "Maintenance - Scripts.md",
+      "category": "Maintenance",
+      "description": "Use when running or writing DiGi.Maintenance scripts or making scripted edits - context scripts first, conf keys, *AllRepos sweeps and the -NoCommit trap, BuildAll order, deploy, editing bytes not lines, line endings.",
+      "route": "Run or write a `DiGi.Maintenance/Scripts` script (context scripts first: status, build/test summaries, rule check, API lookup; `user files/*.conf` keys, `*AllRepos` sweeps, the `-NoCommit` trap, `BuildAll.ps1` order, deploy); scripted edits and line endings"
+    },
+    {
+      "file": "Maintenance - AI Guidelines Propagation.md",
+      "category": "Maintenance",
+      "description": "Use when adding, splitting, renaming or removing an AI Guideline or regenerating .agents/skills - the Guidelines.json manifest, checklist-first layout with Evidence files, stable section anchors, UpdateAgents.ps1.",
+      "route": "Add, split, rename or remove a guideline; regenerate `.agents/skills` (edit `Guidelines.json`, run `UpdateAgents.ps1`)"
+    }
+  ]
+}

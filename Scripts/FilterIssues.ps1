@@ -216,7 +216,7 @@ if ($Issue -gt 0) {
             UpdatedAt = $singleIssue.updatedAt
             Body      = $singleIssue.body
         }
-        $outputObj | ConvertTo-Json -Depth 5
+        $outputObj | ConvertTo-Json -Depth 5 -Compress
         exit 0
     }
 
@@ -323,7 +323,7 @@ if ($Json) {
     if ($jsonList.Count -eq 0) {
         Write-Output "[]"
     } else {
-        $jsonList | ConvertTo-Json -Depth 5
+        $jsonList | ConvertTo-Json -Depth 5 -Compress
     }
     exit 0
 }

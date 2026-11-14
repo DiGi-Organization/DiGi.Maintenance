@@ -2,7 +2,9 @@ param(
 	[string]$Root = "$PSScriptRoot\..\..",  # Default to one level above script folder
 	[string]$Configuration = "Release",
 	[string]$VsMsbuildPath = "",
-	[switch]$CheckDependencies              # Run CheckHostDependencies.ps1 after the last solution builds
+	[switch]$CheckDependencies,             # Run CheckHostDependencies.ps1 after the last solution builds
+	[switch]$Summary,                       # Print only failed solutions and de-duplicated diagnostics, not the MSBuild log
+	[string]$Solution = ""                  # Build only this solution folder (e.g. "DiGi.Core"); unknown exits 2
 )
 
 # Resolve the Root path to full absolute path
@@ -118,6 +120,60 @@ $platform_x64 = @(
 	"DiGi.Tas\DiGi.Tas.slnx"
 )
 
+if ($Solution -ne "")
+{
+	$solutionOrder = @($solutionOrder | Where-Object { $_.Split('\')[0] -eq $Solution })
+
+	if ($solutionOrder.Count -eq 0)
+	{
+		Write-Host "Unknown solution '$Solution' - it is not in the build order of this script." -ForegroundColor Red
+		exit 2
+	}
+}
+
+# 'file(line,col): error CS0000: message [project]' -> 'error CS0000 file:line message', de-duplicated
+function Get-Diagnostics
+{
+	param(
+		[object[]]$Lines
+	)
+
+	$seen = @{}
+	$result = @()
+	foreach ($line in $Lines)
+	{
+		$text = [string]$line
+		$diagnostic = ""
+		$located = [regex]::Match($text, '^\s*(?:\d+>)?(?<file>[^(]+?)\((?<line>\d+)(?:,\d+)*\)\s*:\s*(?<severity>error|warning)\s+(?<code>\w+)\s*:\s*(?<message>.*?)(?:\s*\[[^\]]+\])?\s*$')
+		if ($located.Success)
+		{
+			$file = $located.Groups['file'].Value.Trim()
+			if ($file.StartsWith([string]$Root, [System.StringComparison]::OrdinalIgnoreCase))
+			{
+				$file = $file.Substring(([string]$Root).Length).TrimStart('\')
+			}
+			$diagnostic = "{0} {1} {2}:{3} {4}" -f $located.Groups['severity'].Value, $located.Groups['code'].Value, $file, $located.Groups['line'].Value, $located.Groups['message'].Value
+		}
+		else
+		{
+			$general = [regex]::Match($text, '^\s*(?:\d+>)?[^:]*?\s*:\s*(?<severity>error|warning)\s+(?<code>\w+)\s*:\s*(?<message>.*?)(?:\s*\[[^\]]+\])?\s*$')
+			if (-not $general.Success)
+			{
+				continue
+			}
+			$diagnostic = "{0} {1} {2}" -f $general.Groups['severity'].Value, $general.Groups['code'].Value, $general.Groups['message'].Value
+		}
+
+		if (-not $seen.ContainsKey($diagnostic))
+		{
+			$seen[$diagnostic] = $true
+			$result += $diagnostic
+		}
+	}
+
+	return $result
+}
+
 $count = 0
 
 $length = $solutionOrder.Count
@@ -132,7 +188,10 @@ foreach ($relativePath in $solutionOrder)
 		continue
 	}
 
-	Write-Host "Building solution: $sln"
+	if (-Not $Summary)
+	{
+		Write-Host "Building solution: $sln"
+	}
 
 	# Determine platform parameter
 	if ($platform_x64 -contains $relativePath) 
@@ -148,6 +207,30 @@ foreach ($relativePath in $solutionOrder)
 	#& $VsMsbuildPath $sln /p:Configuration=$Configuration $platformParam /m:1 /p:VisualStudioVersion=17.0 /verbosity:minimal
 	
 	# Build the solution with an explicit restore step
+	if ($Summary)
+	{
+		# Capture the log; print only what needs attention
+		$buildOutput = & $VsMsbuildPath $sln -restore /p:Configuration=$Configuration $platformParam /m:1 /p:VisualStudioVersion=17.0 /verbosity:minimal
+		$buildExitCode = $LASTEXITCODE
+		$diagnostics = @(Get-Diagnostics -Lines $buildOutput)
+
+		if ($buildExitCode -ne 0)
+		{
+			Write-Host "FAIL $relativePath" -ForegroundColor Red
+			$diagnostics | Where-Object { $_.StartsWith("error") } | ForEach-Object { Write-Host "  $_" }
+			exit $buildExitCode
+		}
+
+		if ($diagnostics.Count -gt 0)
+		{
+			Write-Host "WARN $relativePath" -ForegroundColor Yellow
+			$diagnostics | ForEach-Object { Write-Host "  $_" }
+		}
+
+		$count = $count + 1
+		continue
+	}
+
 	& $VsMsbuildPath $sln -restore /p:Configuration=$Configuration $platformParam /m:1 /p:VisualStudioVersion=17.0 /verbosity:minimal
 
 	if ($LASTEXITCODE -ne 0) 

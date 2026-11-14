@@ -29,6 +29,42 @@ PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\BuildAll.ps1" -Configurat
 
 # Build, then audit the host outputs for unresolvable assembly references
 PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\BuildAll.ps1" -Configuration Release -CheckDependencies
+
+# Summary mode: no MSBuild log - only FAIL/WARN solutions with de-duplicated 'error CS0000 file:line message' lines
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\BuildAll.ps1" -Summary
+
+# One solution of the build order (an unknown name exits with code 2)
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\BuildAll.ps1" -Configuration Debug -Summary -Solution "DiGi.Core"
+```
+
+### Agent Context Scripts (compact output instead of raw files and logs)
+Read-only scripts whose output is meant to be read by an AI agent (or a person in a hurry): one line per finding,
+nothing for what is fine, `-Json` as one compressed line. Use them before reading files or logs
+(`Maintenance - Scripts.md` §7).
+```powershell
+# Which repositories need attention: branch (and the expected version branch), uncommitted files, ahead/behind
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\StatusAllRepos.ps1"
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\StatusAllRepos.ps1" -Repo "DiGi.Core" -All
+
+# Signature + summary of the public members matching a regular expression, from documentation/API
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\GetApi.ps1" -Assembly "DiGi.Core" -Match "Query\.Clone"
+
+# Build the changed library first (HintPath: dotnet test never rebuilds it), run the facts, print counts + failures only
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\TestSummary.ps1" -Library "..\..\DiGi.Core\DiGi.Core\DiGi.Core.csproj" -Project "..\..\DiGi.Core\DiGi.Core.xUnit"
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\TestSummary.ps1" -Project "..\..\DiGi.Core\DiGi.Core.xUnit" -Filter "FullyQualifiedName~SerializationCheck"
+
+# The coding rules no analyzer enforces (one public method per Query/Modify/Create file, no private methods there,
+# Get prefix in Query, using Xunit, TODO without [Marker], machine paths in markdown, .gitignore, .editorconfig)
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\CheckGuidelineRules.ps1" -Repo "DiGi.Core" -Changed
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\CheckGuidelineRules.ps1" -Repo "DiGi.Core" -FailOnViolation
+
+# What every agent session loads (CLAUDE.md, AGENTS.md, skill descriptions) and what each guideline costs when read
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\MeasureAgentContext.ps1"
+
+# After editing a guideline: no code line, backticked identifier, issue reference, date, number or numbered
+# section of the base version may be lost (it may move to the guideline's Evidence file or another guideline)
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\CheckGuidelineLossless.ps1" -BaseRef HEAD
+PowerShell -NoProfile -ExecutionPolicy Bypass -File ".\CheckGuidelineLossless.ps1" -BaseRef HEAD -Name "Coding - General.md" -Detail
 ```
 
 ### Check Host Dependencies
@@ -145,12 +181,15 @@ PowerShell -ExecutionPolicy Bypass -File ".\CheckWikiPages.ps1"
 ```
 
 ### Update AI Agents & Guidelines
-Regenerates `.agents/AGENTS.md` and `.agents/skills/*/SKILL.md` across all DiGi repositories from `DiGi.Maintenance/documentation/AI Guidelines`, and refreshes the machine-global `AGENTS.md` when `GLOBAL_AGENTS_FILE` is configured. Changes are committed per repository unless `-NoCommit` is passed. Fails before writing anything if a source file (a guideline, the reference `AGENTS.md`, the repository `README.md`, or the `files/README - Coding Guidelines.md` template) carries a stray `\r\r\n` line ending - the sequence its own normalisation would otherwise propagate silently.
+Regenerates `.agents/AGENTS.md` and `.agents/skills/*/SKILL.md` across all DiGi repositories (and `templates/DiGi.Template`) from `DiGi.Maintenance/documentation/AI Guidelines`, and refreshes the machine-global `AGENTS.md` when `GLOBAL_AGENTS_FILE` is configured. The manifest `documentation/AI Guidelines/Guidelines.json` is the one list of guidelines (category, skill description, `CLAUDE.md` routing cell): the script rewrites the blocks between `<!-- guidelines:begin -->` and `<!-- guidelines:end -->` in the guidelines `README.md`, `.agents/AGENTS.md` and the workspace `CLAUDE.md` from it, copies each guideline's `Evidence/<same name>.md` beside its skill as `evidence.md`, and copies the workflow skills in `files/skills/` into every `.agents/skills` and the workspace `.claude/skills`. Changes are committed per repository unless `-NoCommit` is passed. Fails before writing anything if the manifest and the guideline files disagree (a file not listed, a listed file missing, a file `files/README - Coding Guidelines.md` does not name), or if a source file carries a stray `\r\r\n` line ending - the sequence its own normalisation would otherwise propagate silently.
 ```powershell
 PowerShell -ExecutionPolicy Bypass -File ".\UpdateAgents.ps1"
 
 # Update the files without creating commits
 PowerShell -ExecutionPolicy Bypass -File ".\UpdateAgents.ps1" -NoCommit
+
+# Refresh the generated blocks and one repository only (an unknown name exits with code 2)
+PowerShell -ExecutionPolicy Bypass -File ".\UpdateAgents.ps1" -Repo "DiGi.Maintenance"
 ```
 
 ### Update Solution READMEs
