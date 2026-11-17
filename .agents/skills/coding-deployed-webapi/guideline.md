@@ -15,6 +15,7 @@ Read this first; open a section only when its line applies to the check.
 - `itembyreference` takes the cadastral reference and always `countyid`; pass every filter explicitly — unknown parameters are not rejected (§4).
 - `000` on every call of a sweep is a client bug (CRLF id list) until proven otherwise (§4).
 - Measure a limit and read a log on the machine that ran the code: database server = PostgreSQL + GIS Web API + deployed tools, web server = `DiGi.GIS.WebAPI.UI`; tests never run on a server (§5).
+- Every public host goes through the nginx reverse proxy, which must pass a client disconnect on; `Server:` on a response names the proxy, not the backend (§5).
 
 ## 1. Endpoints & Swagger
 - Base URL `https://api.digiproject.uk` (root `/` answers 404).
@@ -144,10 +145,18 @@ curl.exe -s -H "key: <key>" "https://api.digiproject.uk/information/endpoints?in
 |---|---|---|
 | **Database server** (separate, stronger) | production PostgreSQL; `DiGi.WebAPI.WindowsService` with the GIS Web API and `extensions\*`; deployed tools (`bodyplan.Importer`, the tray application). **No development tooling** — no Visual Studio, source, builds or xUnit | `https://api.digiproject.uk` |
 | **Web server** | `DiGi.GIS.WebAPI.UI` under IIS; no development tooling | `https://gis.digiproject.uk` |
+| **Reverse proxy** (Raspberry Pi on the LAN) | nginx on 80/443: TLS for every public host (Let's Encrypt, certbot webroot), routed by SNI to the database server (`api`), the web server (`gis`, `bodyplan`) and others; Nextcloud (`cloud`) on Apache behind it on loopback | every public hostname; the backends see only its LAN address |
 | **Development / test machines** | editing, builds, `DiGi.Test`, development databases behind `*.conf` | — never production (`Coding - PostgreSQL.md` §6) |
 
 The tray application (`DiGi.GIS.PostgreSQL.UI`) is installed on **both** servers; a task runs where it was started.
 Hardware is deliberately not recorded — read it at measurement time and cite the measurement (issue comment, date).
+- **The reverse proxy must pass a client disconnect on.** Otherwise `HttpContext.RequestAborted` never fires and every
+  abandoned request runs to completion, however well the endpoint passes its token down. Apache `mod_proxy_http` did
+  not; nginx does (`proxy_ignore_client_abort off`, the default). Swapped on 2026-11-17 (DiGi.GIS.WebAPI#77/#92).
+  - Check: close a raw socket mid-request and read the action's log for a cancellation. A local fact without the proxy
+    proves nothing about production.
+  - A response's `Server:` header names the proxy, not the backend, and a proxy can forward the backend's own. Under
+    Apache, `Server: Kestrel` was read as "nothing in between".
 - **Tests never run on a server**; a server runs only what `Scripts/Deploy.ps1` carried there. Verify on it with the
   deployed tools (`bodyplan.Importer` and its `reports/`, the tray) or through the API. A test's write found in a database
   came from a development machine — first ask whether that database is production at all (bodyplan#47/#48,

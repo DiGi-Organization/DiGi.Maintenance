@@ -6,6 +6,7 @@ pretends to be an answer. Reference (workspace-relative):
 `DiGi.GIS.PostgreSQL.UI/DiGi.GIS.PostgreSQL.UI/Windows/YearBuiltPredictionsOptionsWindow.xaml(.cs)`, fed by
 `Query/PredictedYearBuiltCoverageFactorsAsync.cs`, opened by `Classes/BackgroundTask/UIYearBuiltPredictionsTask.cs`; facts
 `DiGi.Test/DiGi.GIS.PostgreSQL.UI.xUnit/Facts/YearBuiltPredictionsOptionsWindow_Coverage*.cs` (DiGi.GIS.PostgreSQL.UI#40).
+Measurements behind the rules: [Evidence](evidence.md).
 
 ## Checklist
 Read this first; open a section only when its line applies to the change (§6 maps a symptom to its cause).
@@ -13,7 +14,7 @@ Read this first; open a section only when its line applies to the change (§6 ma
 - The constructor takes the read as a `Func<CancellationToken, Task<T?>>?` delegate and starts it without awaiting; a public `SetX(T? x)` applies the result (§2.1).
 - No `ConfigureAwait(false)` in the window; hide the bar in `finally` as well as in `SetX` (§2.2).
 - Bar bottom-left `Collapsed` in markup, a status label near the data, controls never disabled (§2.3); refresh the items, never re-set the list (§2.4).
-- `Closed` cancels and disposes the token source — every way out, OK included; the server stops only at its `commandtimeout`, so keep it ≤ the client wait (§2.5).
+- `Closed` cancels and disposes the token source — every way out, OK included; the server stops too if the endpoint passes the token and the proxy passes the disconnect on; keep `commandtimeout` ≤ the client wait as a backstop (§2.5).
 - The `Query` read returns `null` for every failure, is bounded by a linked timeout, batches with `Task.WhenAll`, rethrows only the caller's cancellation (§3).
 - `null` = unknown: nothing marked and the status says so — never an empty result (§4).
 - STA facts for no read, pending, completes, throws, closed-before-data; install a `DispatcherSynchronizationContext` and pump; never `ShowDialog` (§5).
@@ -111,12 +112,16 @@ Closed += (sender, e) =>
 1. **Every way out cancels, OK included** (`Closed` fires for OK, Cancel and the close box) — never only the Cancel button.
 2. **The client stops:** the token reaches the `Query` member (linked to its timeout); running `HttpClient` calls are
    abandoned and throttled requests never start.
-3. **The server does not stop as deployed (DiGi.GIS.WebAPI#77).** Passing the token down is necessary (an endpoint that
-   drops it runs until `commandtimeout` — check the controller when adding a read) but not sufficient:
-   `terrain/densitiesbycountyids` passes it to `ExecuteReaderAsync`, yet a request whose socket closed at 4 s kept loading
-   the server (re-run 18.9 s vs 14.1 s alone, 20.5 s for two at once, 2026-11-07). Until #77 is fixed the server
-   `commandtimeout` the `Query` member sends is what ends an abandoned query — keep it no longer than the client wait.
-   Measure (the #77 probe), do not read code, before claiming a close frees the server.
+3. **The server stops too: within ~0.1 s of the close**, when two things hold.
+   - The endpoint passes the token down. An endpoint that drops it runs until `commandtimeout`, so check the controller
+     when adding a read.
+   - The reverse proxy passes the disconnect on to Kestrel (`Coding - Deployed WebAPI.md` §5). Under Apache
+     `mod_proxy_http` it did not. `HttpContext.RequestAborted` never fired, and every abandoned read ran to completion
+     (DiGi.GIS.WebAPI#77, fixed by the nginx swap in #92 on 2026-11-17; numbers in Evidence §2.5).
+
+   Keep the server `commandtimeout` the `Query` member sends no longer than the client wait, as a backstop. Before
+   claiming that a close frees the server, measure; do not read code. Abort a request from a raw socket and read the
+   action's server log.
 4. The `Query` member rethrows the caller's cancellation (`catch (…) when (cancellationToken.IsCancellationRequested) { throw; }`).
 5. The window returns before `SetX`; `finally` collapses the bar; status and items stay; nothing is logged (a
    cancellation is not a failure).
@@ -178,7 +183,7 @@ placement on screen once (or §7).
 | Bar keeps spinning after data or close | Bar hidden only on the success path — hide it in `finally` |
 | Selection lost when data arrives | List re-set instead of refreshed |
 | Every item "not done" after a network error | Failed read turned into an empty result instead of `null` |
-| Server keeps querying after close | Token not passed down, or the controller drops it — **and, as deployed, even when both are right** (#77): keep the server `commandtimeout` ≤ the client wait |
+| Server keeps querying after close | Token not passed down, the controller drops it, or the reverse proxy does not pass the disconnect on (Apache `mod_proxy_http`, #77/#92): keep the server `commandtimeout` ≤ the client wait as a backstop |
 | Read continues after OK | Cancellation on the Cancel button instead of `Closed` |
 | `ObjectDisposedException` after close | `.Token` read from the disposed source |
 | Warning "could not be read" on close | Cancellation surfaced as `HttpRequestException` — harmless |

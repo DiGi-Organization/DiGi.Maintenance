@@ -1,6 +1,6 @@
 ---
 name: coding-deployed-webapi
-description: "Use when checking a change against api.digiproject.uk or deciding which server runs what - per-prefix Swagger, deployed build lag, sequential querying, cold-partition timeouts, where each log lives. Manual curl only."
+description: "Use when checking a change against api.digiproject.uk or deciding which server runs what - per-prefix Swagger, deployed build lag, sequential querying, cold-partition timeouts, where each log lives, the reverse proxy in front of every host. Manual curl only."
 ---
 
 # Coding — Deployed WebAPI (Live Endpoint Testing)
@@ -20,5 +20,6 @@ Read this first; open a section only when its line applies to the check.
 - `itembyreference` takes the cadastral reference and always `countyid`; pass every filter explicitly — unknown parameters are not rejected (§4).
 - `000` on every call of a sweep is a client bug (CRLF id list) until proven otherwise (§4).
 - Measure a limit and read a log on the machine that ran the code: database server = PostgreSQL + GIS Web API + deployed tools, web server = `DiGi.GIS.WebAPI.UI`; tests never run on a server (§5).
+- Every public host goes through the nginx reverse proxy, which must pass a client disconnect on; `Server:` on a response names the proxy, not the backend (§5).
 
 **Sections (rules in full, code, traps):** [guideline.md](guideline.md) - before changing code a checklist line covers, read the section it names.
