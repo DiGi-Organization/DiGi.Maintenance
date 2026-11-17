@@ -106,7 +106,7 @@
     {
       "file": "Coding - Deployed WebAPI.md",
       "category": "Coding",
-      "description": "Use when checking a change against api.digiproject.uk or deciding which server runs what - per-prefix Swagger, deployed build lag, sequential querying, cold-partition timeouts, where each log lives. Manual curl only.",
+      "description": "Use when checking a change against api.digiproject.uk or deciding which server runs what - per-prefix Swagger, deployed build lag, sequential querying, cold-partition timeouts, where each log lives, the reverse proxy in front of every host. Manual curl only.",
       "route": "Test against `api.digiproject.uk` — read the per-prefix Swagger (`/swagger/gis/swagger.json`, …), not the full one; which server runs what, where a limit is measured, where a log lives",
       "routeNote": " (§1 Swagger, §5 topology)"
     },
