@@ -65,6 +65,8 @@ $solutionOrder = @(
 	"DiGi.Serilog\DiGi.Serilog.slnx",
 	"DiGi.WebAPI\DiGi.WebAPI.slnx",
 	"DiGi.GLTF.WebAPI\DiGi.GLTF.WebAPI.slnx",
+	"DiGi.Harness\DiGi.Harness.slnx",
+	"DiGi.Harness.WebAPI\DiGi.Harness.WebAPI.slnx",
 	"DiGi.User.WebAPI\DiGi.User.WebAPI.slnx",
 	"DiGi.Typology\DiGi.Typology.slnx",
 	"DiGi.Log\DiGi.Log.slnx",
