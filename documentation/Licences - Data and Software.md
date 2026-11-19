@@ -31,6 +31,7 @@ empty licence field for every repository - read the per-repository endpoint inst
 | Terrain model (`GetHByXY`) | GUGiK | as above - art. 40a(2)(1)(d) | [geoportal.gov.pl](https://www.geoportal.gov.pl/) | 2026-10-23 | as above |
 | Budynki3D, CityGML LoD1/LoD2 | GUGiK | published free of charge on the Geoportal; **not named** in art. 40a(2)(1). Closest bases: (1)(j) building identifiers, geometry and type, and (2)(b) free provision for scientific research | [modele 3D budynków](https://www.geoportal.gov.pl/pl/dane/inne-dane/modele-3d-budynkow/) | 2026-10-23 | name the source; for commercial use confirm the terms with GUGiK (§5) |
 | Local Data Bank (BDL API) | GUS | CC BY 4.0 | [bdl.stat.gov.pl](https://bdl.stat.gov.pl/) | 2026-10-22 | attribution |
+| NSP 2021, subject `P4386` "Mieszkania zamieszkane wg okresu budowy budynku" (`G645`, `K31`), level 6 (gmina), year 2021 | GUS (via BDL API) | CC BY 4.0 (as the BDL row above) | [bdl.stat.gov.pl](https://bdl.stat.gov.pl/) | 2026-11-19 | attribution: GUS, NSP 2021, via BDL |
 | NSP 2021 population in a 1 km grid | GUS (Geostatistics Portal, INSPIRE ATOM) | portal terms: access "public and free of charge"; no licence or attribution clause named | [portal.geo.stat.gov.pl](https://portal.geo.stat.gov.pl/en/terms-and-conditions/) | 2026-10-23 | name GUS as the source |
 | Typical meteorological years 1971–2000 (TLM1970) | ministry responsible for construction | **CC0 1.0** (dane.gov.pl dataset 797, modified 2024-03-19) | [dane.gov.pl/dataset/797](https://dane.gov.pl/en/dataset/797) | 2026-10-23 | none (citation good practice) |
 | Typical meteorological years 2001–2020 (TLM2000) | P. Narowski, Warsaw University of Technology | freeware: free use and free redistribution for research, design and building-energy analysis, **unmodified only**; no sale or modification; commercial software or paid information services need the author's **written consent**; publications must cite the TLM2000 papers | [licence](http://fizyka-budowli.pl/license-caveat-emptor/) | 2026-10-23 | cite Narowski 2022 (*Instal* 10/2022, DOI 10.36119/15.2022.10.2; *COW* 9/2022, DOI 10.15199/9.2022.9.1) |
@@ -52,6 +53,23 @@ These are the six datasets imported for comparison with BDOT10k (DiGi-Organizati
 | GHS-OBAT | **R2024A**, epoch 2020, `GHS_OBAT_GPKG_POL_E2020_R2024A_V1_0.gpkg` | **CC BY 4.0** is the only licence in the provider's `copyright.txt`. Its building identifiers and geometry derive from Overture 2024-07-22.0, which is ODbL (§5). | [GHS_OBAT_GLOBE_R2024A/copyright.txt](https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_OBAT_GLOBE_R2024A/copyright.txt) | "© European Union"; credit and indicate changes. Its `overture_id` values are Overture 2024-07-22.0 identifiers and do not join to the 2026-10-21.0 release. |
 
 The datasets are not independent: Overture and DBSM incorporate OSM and Microsoft, EUBUCCO v0.2 incorporates OSM and Microsoft for Poland, and GHS-OBAT is derived from Overture. Their licences therefore stack (§4.4).
+
+### 2.2 BDL data — NSP 2021 construction-period variables
+
+The NSP 2021 subject `P4386` row above is used for the fallback year built (DiGi-Organization/DiGi.GIS.Analytical#17): buildings predicted as 2008 take the median construction year of their gmina's occupied dwellings from this subject. Only the 10 dwelling variables are read; the floor-area (+1) and population (+2) variants of each period are not. Variable IDs, period bounds, and unit (count) were read from BDL on 2026-11-19.
+
+| Period (as published) | Dwelling variable ID |
+|---|---|
+| total | 1723518 |
+| before 1918 | 1723521 |
+| 1918–1944 | 1723524 |
+| 1945–1970 | 1723527 |
+| 1971–1978 | 1723530 |
+| 1979–1988 | 1723533 |
+| 1989–2002 | 1723536 |
+| 2003–2011 | 1723539 |
+| 2012–2016 | 1723542 |
+| 2017–2021 | 1723545 |
 
 ## 3. Third-party software
 
