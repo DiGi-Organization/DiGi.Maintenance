@@ -255,3 +255,22 @@ PowerShell -ExecutionPolicy Bypass -File ".\SyncLabelsAllRepos.ps1" -Repo "DiGi.
 PowerShell -ExecutionPolicy Bypass -File ".\SyncLabelsAllRepos.ps1"
 ```
 
+### Explain the OrtoDatas Retire Statement (on the database server)
+Diagnoses the poison-row retirement of the OrtoDatas download queue against the production queue table
+(DiGi.GIS.PostgreSQL#145). Runs on the database server, against the Storage database the GIS Web API reads
+(`GIS_PostgreSQL_Storage.conf`): lists the queue entries of a county part with their `attempts`, checks that
+the column is NOT NULL and which indexes the table carries, prints the plan of the retirement as it shipped
+before the fix (unsargable `COALESCE`) and of the fixed statement (`attempts >= 5`), and measures the fixed
+statement inside transactions that are rolled back. Everything is read-only or rolled back - `EXPLAIN` without
+`ANALYZE` never executes the DELETE - and the password is passed to psql through the process environment only.
+Output: `OrtoDatas_Retire_Explain.txt` in the output directory, describing that server's database only, never a
+development one (`Coding - PostgreSQL.md` section 6). Exits 0 when the run completed, 1 when psql failed, 2 on
+an invalid invocation.
+```powershell
+# Find GIS_PostgreSQL_Storage.conf under a software directory
+PowerShell -ExecutionPolicy Bypass -File ".\ExplainOrtoDatasRetire.ps1" -Root "<software directory>" -OutputDirectory "<folder>"
+
+# Explicit conf and county part (default 17371 - the part of DiGi.GIS.PostgreSQL#145)
+PowerShell -ExecutionPolicy Bypass -File ".\ExplainOrtoDatasRetire.ps1" -ConfPath "<path>\GIS_PostgreSQL_Storage.conf" -CountyId 17371
+```
+
