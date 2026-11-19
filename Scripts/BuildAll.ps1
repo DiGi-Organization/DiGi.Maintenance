@@ -87,7 +87,7 @@ $solutionOrder = @(
 	"DiGi.BDOT10k\DiGi.BDOT10k.slnx",
 	"DiGi.PRG\DiGi.PRG.slnx",
 	"DiGi.Analytical\DiGi.Analytical.slnx",
-	# DiGi.EnergyPlus reaches DiGi.Analytical.Building(.Energy/.HVAC/.Regulation) and DiGi.EPW by HintPath (DiGi.EnergyPlus#1).
+	# DiGi.EnergyPlus reaches DiGi.Analytical.Building(.Energy/.Regulation), DiGi.EPW, DiGi.Python and DiGi.Serilog by HintPath (DiGi.EnergyPlus#1).
 	"DiGi.EnergyPlus\DiGi.EnergyPlus.slnx",
 	"DiGi.Analytical.Rhino\DiGi.Analytical.Rhino.slnx",
 	"DiGi.GLTF.Analytical\DiGi.GLTF.Analytical.slnx",
