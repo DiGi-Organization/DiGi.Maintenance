@@ -5,6 +5,8 @@
 claim), `AcknowledgeBuilding2DReferencesAsync`, `GetQueueSummariesByCountyIdsAsync`, and the
 `nextbuilding2dreferences` / `acknowledgebuilding2dreferences` / `queuesummariesbycountyids` actions of
 `OrtoDatasController`. **When this document and that code disagree, the code is the current state — fix the document.**
+Incidents and measurements behind these rules: [Evidence](evidence.md)
+(read only when a rule is disputed or being changed).
 
 ## Checklist
 Read this first; open a section only when its line applies to the change.
@@ -12,12 +14,13 @@ Read this first; open a section only when its line applies to the change.
 - Enqueue, claim and acknowledge run the DDL, not an existence check?
 - `UNIQUE (county_id, reference)` with `county_id` a county **part** id?
 - Claim index `(claimed_at ASC NULLS FIRST, created_at ASC)` and a claim ordered the same way?
+- Queue table carries `idx_{tableName}_attempts`, and the retirement predicate is the sargable `attempts >= @maxAttempts`, never `COALESCE`? (§2, §4)
 - Claim uses `FOR UPDATE SKIP LOCKED`, native interval multiplication, increments `attempts`, parenthesised lease condition before the ceiling?
 - Claim method takes `count`, `claimTimeoutMinutes`, `maxAttempts`, `commandTimeout`, token; controller binds `maxattempts`?
 - `claimTimeoutMinutes` above the worst-case batch time?
 - Acknowledge by `id = ANY(@ids)`, idempotent target or owner-checked on `claimed_at`?
 - Re-enqueue during a claim covered (`DO NOTHING`) or reset (`DO UPDATE`), documented on the producer?
-- Retirement before the claim, every retired reference logged at Error?
+- Retirement before the claim, every retired reference logged at Error, and a failed retirement logged instead of returned as `null`? (§4)
 - Acknowledgment only after the storage write succeeded?
 - Read-only observation reports attempted rows; completeness measured on the target per county part?
 - XML documentation on every public method and endpoint?
@@ -50,12 +53,14 @@ ALTER TABLE {tableName} ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0
 CREATE UNIQUE INDEX IF NOT EXISTS idx_{tableName}_county_id_reference ON {tableName} (county_id, reference);
 CREATE INDEX IF NOT EXISTS idx_{tableName}_created_at ON {tableName} (created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_{tableName}_claimed_at ON {tableName} (claimed_at ASC NULLS FIRST, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_{tableName}_attempts ON {tableName} (attempts ASC);
 ```
 - `id` is the handle workers get back and acknowledge by. `claimed_at` `NULL` = ready; a timestamp = an active lease.
 - `UNIQUE (county_id, reference)` keeps a refresh from enqueuing duplicates; `county_id` is a county **part** id — a
   multi-part county spans several values, so a summary or progress check names every part
   (`Coding - GIS Administrative Data.md`).
 - `attempts` counts **claims**, from `0` (with `DEFAULT 1`, `maxAttempts = 5` would allow only four).
+- **`attempts` carries its own plain btree** (`idx_{tableName}_attempts`): the retirement that runs at the start of every claim (§4) filters on it, and a queue of millions without that index is a full table walk per claim (DiGi.GIS.PostgreSQL#145).
 - `PRIMARY KEY (id, county_id)` on an unpartitioned table is redundant (`id` is unique); look rows up and acknowledge by
   `id` alone.
 - **Every path that reads or writes the queue — enqueue, claim, acknowledge — runs the DDL first**, not a
@@ -80,6 +85,7 @@ RETURNING id, county_id, reference, subdivision_id;
 ```
 - **Parenthesise the lease condition** — `AND` binds tighter than `OR`, so without them a never-claimed row skips the
   ceiling. The retirement `DELETE` currently hides this; a copy without it would not.
+- `COALESCE(attempts, 0)` stays in the claim though not in the retirement (§4): the ordering index drives this read, so it costs nothing, and a row whose column somehow escaped the `NOT NULL` backfill is still claimable — the `SET` writes `attempts = COALESCE(attempts, 0) + 1` and heals it.
 - `FOR UPDATE SKIP LOCKED` lets many machines claim concurrently without waiting or double work.
 - **The order matches the claim index and is a fairness rule:** never-claimed rows first, an expired lease behind them.
   Ordered by `created_at` alone, an expired lease jumps to the head, and a worker failing on its first rows retries them
@@ -111,17 +117,22 @@ RETURNING id, county_id, reference, subdivision_id;
   the worker reads its input when it runs (the orthophoto case). **Wrong** when the entry carries a payload or describes a
   later change: use `ON CONFLICT … DO UPDATE SET claimed_at = NULL, attempts = 0, …` with an owner-checked
   acknowledgment. Document the choice on the producer.
-- **Poison rows** (DiGi.GIS.PostgreSQL#48): a reference that can never resolve would cycle forever. The claim method first
+- **Poison rows** (DiGi.GIS.PostgreSQL#48, #145): a reference that can never resolve would cycle forever. The claim method first
   retires exhausted rows, logging each at **Error** with partition + reference (a data defect worth a ticket; the log is
   on the server running the Web API, not the worker):
   ```sql
-  DELETE FROM {tableName} WHERE COALESCE(attempts, 0) >= @maxAttempts RETURNING id, county_id, reference;
+  DELETE FROM {tableName} WHERE attempts >= @maxAttempts RETURNING id, county_id, reference;
   ```
-  `@maxAttempts` (default 5) is high enough for transient faults to clear, low enough to retire the hopeless; `COALESCE`
-  keeps rows predating the column claimable. The `DELETE` scans the queue (no index on `attempts` — a partial index
-  cannot follow the parameter); fine today, measure before a queue grows into the millions. **Retirement is not
-  acknowledgment:** one discards provably failing work, the other confirms stored work; only acknowledgment belongs in the
-  worker loop.
+  `@maxAttempts` (default 5) is high enough for transient faults to clear, low enough to retire the hopeless. The
+  predicate is plain `attempts`, never `COALESCE(attempts, 0)`: `ADD COLUMN IF NOT EXISTS attempts INT NOT NULL DEFAULT 0`
+  backfills every row that predates the column, so it is never null — and the `COALESCE` hid it from every index, so
+  this statement walked the whole queue at the start of every claim until the walk outlasted the command timeout, the
+  call returned `null` and fetched nothing, and exhausted entries stayed (#145: a 5.6 M-row queue whose 20 entries of
+  county part 17371 were never retired). `idx_{tableName}_attempts` (§2) serves the predicate — a plain btree, because a
+  partial index's predicate cannot follow a parameterized ceiling.
+  **A failed retirement does not void the claim:** log it at Error and run the claim anyway — the claim's ceiling excludes
+  the same rows, so `null` keeps meaning only "the queue could not be reached". **Retirement is not acknowledgment:** one
+  discards provably failing work, the other confirms stored work; only acknowledgment belongs in the worker loop.
 
 ## 5. Non-destructive observation
 The one path that keeps `TableExistsAsync` — observation must create nothing; `null` means no refresh ever ran.

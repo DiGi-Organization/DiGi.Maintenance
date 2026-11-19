@@ -10,6 +10,8 @@ description: "Use when designing or maintaining a claim/acknowledge update queue
 claim), `AcknowledgeBuilding2DReferencesAsync`, `GetQueueSummariesByCountyIdsAsync`, and the
 `nextbuilding2dreferences` / `acknowledgebuilding2dreferences` / `queuesummariesbycountyids` actions of
 `OrtoDatasController`. **When this document and that code disagree, the code is the current state — fix the document.**
+Incidents and measurements behind these rules: [Evidence](evidence.md)
+(read only when a rule is disputed or being changed).
 
 ## Checklist
 Read this first; open a section only when its line applies to the change.
@@ -17,12 +19,13 @@ Read this first; open a section only when its line applies to the change.
 - Enqueue, claim and acknowledge run the DDL, not an existence check?
 - `UNIQUE (county_id, reference)` with `county_id` a county **part** id?
 - Claim index `(claimed_at ASC NULLS FIRST, created_at ASC)` and a claim ordered the same way?
+- Queue table carries `idx_{tableName}_attempts`, and the retirement predicate is the sargable `attempts >= @maxAttempts`, never `COALESCE`? (§2, §4)
 - Claim uses `FOR UPDATE SKIP LOCKED`, native interval multiplication, increments `attempts`, parenthesised lease condition before the ceiling?
 - Claim method takes `count`, `claimTimeoutMinutes`, `maxAttempts`, `commandTimeout`, token; controller binds `maxattempts`?
 - `claimTimeoutMinutes` above the worst-case batch time?
 - Acknowledge by `id = ANY(@ids)`, idempotent target or owner-checked on `claimed_at`?
 - Re-enqueue during a claim covered (`DO NOTHING`) or reset (`DO UPDATE`), documented on the producer?
-- Retirement before the claim, every retired reference logged at Error?
+- Retirement before the claim, every retired reference logged at Error, and a failed retirement logged instead of returned as `null`? (§4)
 - Acknowledgment only after the storage write succeeded?
 - Read-only observation reports attempted rows; completeness measured on the target per county part?
 - XML documentation on every public method and endpoint?
