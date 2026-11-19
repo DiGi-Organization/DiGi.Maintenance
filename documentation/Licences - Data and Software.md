@@ -67,6 +67,7 @@ Licences read from NuGet metadata, the projects' `LICENSE` files and PyPI / Hugg
 | Microsoft.ML 5.0, ML.LightGbm, ML.OneDal | `DiGi.GIS.ML` | MIT | |
 | Microsoft.ML.OnnxRuntime 1.29 | `DiGi.YOLO.ONNX` (inference) | MIT | |
 | Laya 0.4 (Python) and its model | `DiGi.Laya` | Apache-2.0 (package and Hugging Face model) | |
+| **EnergyPlus** 26.2 (simulation engine, installed separately) | `DiGi.EnergyPlus` (writes its IDF input, runs its command line, reads its output; DiGi-Organization/DiGi.EnergyPlus#1) | **BSD-3-Clause plus a clause (4) on the EnergyPlus name** (`LICENSE.txt` of NREL/EnergyPlus; GitHub reports `NOASSERTION`), read 2026-11-19 | not linked and not distributed; a stand-alone copy must be called "EnergyPlus version X"; the name may not be used in a product name without the U.S. DOE's written consent - see §5 |
 | PyTorch, ONNX, onnxslim (Python) | training / export | BSD-3-Clause, Apache-2.0, MIT | |
 | ComputeSharp 3.2 | `DiGi.ComputeSharp`, `DiGi.Solar` (GPU) | MIT | |
 | NetTopologySuite 2.6 | geometry | BSD-3-Clause | |
@@ -115,3 +116,4 @@ The CC BY 4.0 release of §4.3 **cannot cover object-level data joined with an O
 2. **Budynki3D legal basis** - before a commercial use, ask GUGiK which provision of art. 40a covers the models.
 3. **DBSM R2025 licence conflict** - `copyright.txt` (CC BY 4.0) and `licenseODbL.txt` (ODbL) disagree. The register treats the release as ODbL. Ask the JRC (DBSM contact) which one governs before releasing any object-level DBSM derivative.
 4. **GHS-OBAT licence** - the provider states CC BY 4.0 only, although the geometry and identifiers come from ODbL Overture 2024-07-22.0. Confirm with the JRC (GHSL) whether the per-building files carry ODbL obligations. Until then, keep object-level GHS-OBAT joins under ODbL (§4.4).
+5. **EnergyPlus name in a repository name** - clause (4) of the EnergyPlus licence forbids using "EnergyPlus" in a product name without the U.S. DOE's prior written consent. `DiGi.EnergyPlus` is an interface library that ships no EnergyPlus code, which reads as a reference to the software rather than a product name. Before any commercial release or package publication, confirm this reading or rename the repository.
